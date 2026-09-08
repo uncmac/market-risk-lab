@@ -22,11 +22,15 @@
       캐시 meta.warnings 는 리포트 ⑧ 에 '캐시 경고' 로 싣는다.
       에피소드 표는 기본으로 targets.episodes(split=False) — VALIDATION.md §2 의 감사 실측치(≥5% 36회 · ≥10% 12회 ·
       ≥20% 4회)를 재현하는 방식. --episode-split 로 분할 규칙(계약 기본값, 115·26·5회)을 쓸 수 있다.
+      창 규칙 보호: summary JSON 의 run 블록에 재현이 쓴 창 규칙(signals_v0.WINDOW_RULE)과 mrl/signals_v0.py 의 SHA-256 을 기록한다.
+      --reuse-replay 는 저장된 JSON 의 두 값이 현재 코드와 같을 때만 CSV 를 재사용하고, 다르거나 기록이 없으면 재현을 다시 돌린다 —
+      창 규칙을 고친 코드가 옛 규칙의 벤치마크와 조용히 공존하지 못하게 (VALIDATION.md 실험 #1b).
 종료 코드: 0 성공, 1 실패(예외). 검증(--verify N)이 실패하면 예외.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import platform
 import sys
@@ -49,6 +53,7 @@ from mrl import targets as T                                             # noqa:
 from mrl.config import (BACKTEST_START, DATA_DIR, DOCS_DIR, EPISODE_THRESHOLDS,   # noqa: E402
                         RESULTS_DIR, TONES, TONE_EXPOSURE)
 from mrl.data import load_cache                                          # noqa: E402
+from mrl import signals_v0 as S                                          # noqa: E402
 from mrl.replay import cell_table, replay_v0, verify_replay             # noqa: E402
 from mrl.signals_v0 import BASKETS, VARIANTS                             # noqa: E402
 
@@ -164,12 +169,51 @@ def report_summary(summary: dict, variant: str, cells: pd.DataFrame, run: dict) 
 # ------------------------------------------------------------------
 # 변형 하나 실행
 # ------------------------------------------------------------------
+def _signals_hash() -> str:
+    """mrl/signals_v0.py 내용의 SHA-256 (줄끝 CRLF→LF 정규화 — 체크아웃 방식과 무관하게 같은 값).
+    summary JSON 의 run.signals_v0_sha256 에 기록해, 신호 코드가 바뀐 뒤 옛 재현 CSV 를 재사용하지 못하게 한다."""
+    raw = Path(S.__file__).read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _provenance_matches(prev: dict, json_name: str, variant: str) -> bool:
+    """저장된 summary JSON 의 run 블록이 현재 코드와 같은 창 규칙·같은 signals_v0.py 로 만든 것인지. 아니면 사유를 로그하고 False."""
+    rule_prev = prev.get("window_rule")
+    if rule_prev != S.WINDOW_RULE:
+        _log(f"[{variant}] {json_name} 의 창 규칙 {rule_prev!r} ≠ 현재 코드 {S.WINDOW_RULE!r} → 재현 실행 "
+             "(다른 창 규칙으로 만든 CSV 는 재사용하지 않는다)")
+        return False
+    hash_prev = prev.get("signals_v0_sha256")
+    hash_cur = _signals_hash()
+    if hash_prev != hash_cur:
+        _log(f"[{variant}] {json_name} 의 signals_v0.py 해시 {str(hash_prev)[:12]!r} ≠ 현재 {hash_cur[:12]!r} → 재현 실행 "
+             "(신호 코드가 바뀐 뒤의 CSV 는 재사용하지 않는다)")
+        return False
+    return True
+
+
 def _load_replay_csv(csv_path: Path, bundle, args, variant: str) -> pd.DataFrame | None:
-    """--reuse-replay: 저장된 replay CSV 가 요청 구간과 정확히 맞으면 읽어서 쓴다(평가·리포트만 다시). 아니면 None."""
+    """--reuse-replay: 저장된 replay CSV 가 요청 구간과 정확히 맞고, 곁의 summary JSON 이 현재 코드와 같은 창 규칙·같은
+    signals_v0.py 로 만든 것임을 증명하면 읽어서 쓴다(평가·리포트만 다시). 아니면 None(재현 실행). JSON 이 없거나 읽을 수
+    없으면 출처를 증명할 수 없으므로 재사용하지 않는다."""
     if not csv_path.exists():
         _log(f"[{variant}] 재사용할 {csv_path.name} 없음 → 재현 실행")
         return None
     from mrl.replay import REPLAY_COLUMNS, resolve_range
+    jp = csv_path.with_name(f"summary_v0_{variant}.json")
+    prev: dict = {}
+    if jp.exists():
+        try:
+            with open(jp, encoding="utf-8") as f:
+                prev = json.load(f).get("run", {}) or {}
+        except (OSError, ValueError) as e:
+            _log(f"[{variant}] {jp.name} 을 읽을 수 없음({type(e).__name__}) → 출처 미상 CSV 는 재사용하지 않음 → 재현 실행")
+            return None
+    else:
+        _log(f"[{variant}] {jp.name} 없음 → {csv_path.name} 의 창 규칙을 증명할 수 없어 재사용하지 않음 → 재현 실행")
+        return None
+    if not _provenance_matches(prev, jp.name, variant):
+        return None
     df = pd.read_csv(csv_path, index_col="date", parse_dates=["date"], encoding="utf-8")
     want = resolve_range(bundle.spy_ohlc.index, args.start, args.end)
     if not df.index.equals(want) or any(c not in df.columns for c in REPLAY_COLUMNS):
@@ -185,18 +229,10 @@ def _load_replay_csv(csv_path: Path, bundle, args, variant: str) -> pd.DataFrame
             return None
     for c in ("fg_avail", "eod_avail"):
         df[c] = df[c].astype(bool)
-    prev = {}
-    jp = csv_path.with_name(f"summary_v0_{variant}.json")
-    if jp.exists():
-        try:
-            with open(jp, encoding="utf-8") as f:
-                prev = json.load(f).get("run", {}) or {}
-        except (OSError, ValueError):
-            prev = {}
     df.attrs.update({"variant": variant, "basket": args.basket, "start": want[0].strftime("%Y-%m-%d"),
                      "end": want[-1].strftime("%Y-%m-%d"), "n_days": int(len(df)), "reused": True,
                      "runtime_sec": prev.get("replay_runtime_sec"), "ms_per_day": prev.get("ms_per_day"),
-                     "warnings": prev.get("replay_warnings", {})})
+                     "warnings": prev.get("replay_warnings", {}), "window_rule": prev.get("window_rule")})
     return df
 
 
@@ -247,7 +283,12 @@ def run_variant(bundle, variant: str, args, targets: pd.DataFrame, eps: dict, sp
                   "warnings": list(bundle.meta.get("warnings", []) or [])},
         "python": platform.python_version(), "pandas": pd.__version__, "numpy": np.__version__,
         "replay_warnings": rep.attrs.get("warnings", {}),
+        # 출처 보호: 이 재현이 쓴 창 규칙과 신호 코드 해시. --reuse-replay 는 두 값이 현재 코드와 같을 때만 CSV 를 재사용한다.
+        "window_rule": rep.attrs.get("window_rule") or S.WINDOW_RULE,
+        "signals_v0_sha256": _signals_hash(),
     }
+    if run["window_rule"] != S.WINDOW_RULE:       # 재사용 경로가 막았어야 할 상황 — 조용히 넘기지 않는다
+        raise RuntimeError(f"[{variant}] replay 의 창 규칙 {run['window_rule']!r} 이 현재 코드 {S.WINDOW_RULE!r} 과 다름")
     # 리포트용 파생 키(directional·episode_summary·switches·data_range·honesty)도 JSON 에 함께 남긴다 —
     # 하류(Phase 2 비교·외부 검토)가 HTML 없이 같은 숫자를 읽을 수 있게. allocation 은 evaluate 의 평면 dict 그대로.
     rsum = report_summary(summary, variant, cells, run)

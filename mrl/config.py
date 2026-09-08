@@ -21,8 +21,8 @@ V0 = {
                   "META", "NVDU", "QQQ", "NVDA", "VLO", "IBIT", "AMZN", "PLTR",
                   "MSFT", "SPXL", "XLE", "GOOGL", "PHO", "UDOW", "KO", "NFLX",
                   "BLK", "FAS", "AAPL", "AAL"],
-    "period": "2y",              # 라이브 시스템의 SPY/VIX/BTC/FANG 조회 창 (재현 시 504거래일로 에뮬레이션)
-    "watch_period": "1y",        # 워치리스트 조회 창 (252거래일)
+    "period": "2y",              # 라이브 시스템의 SPY/VIX/BTC/FANG 조회 창 (재현: (asof-2y, asof] 달력 창 500~507거래일 — signals_v0.WINDOW_SPAN)
+    "watch_period": "1y",        # 워치리스트 조회 창 (재현: (asof-1y, asof] 달력 창 ≈252거래일)
     "ma_window": 180,
     "lookback": {"daily": 5, "weekly": 4, "monthly": 3},
     "turn_k": {"daily": 3, "weekly": 2, "monthly": 2},

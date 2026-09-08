@@ -46,7 +46,7 @@ from mrl import calendar_us
 from mrl.config import V0, V0_DAILY_ONLY, V0_SC, V0_SIGNALS, V0_WEIGHTS
 
 __all__ = [
-    "TFS", "VARIANTS", "BASKETS", "WINDOW_SPAN", "EOD_SESSIONS", "BTC_MOM_K", "FG_HIST_N", "MIN_WATCH_BARS",
+    "TFS", "VARIANTS", "BASKETS", "WINDOW_SPAN", "WINDOW_RULE", "EOD_SESSIONS", "BTC_MOM_K", "FG_HIST_N", "MIN_WATCH_BARS",
     "resample_close", "macd_phase", "ret",
     "window", "v0_metrics", "v0_assess", "v0_composite", "v0_overall", "v0_combo", "v0_day",
 ]
@@ -58,6 +58,21 @@ BASKETS = ("v0", "equal")
 # 재현은 asof 를 앵커로 같은 달력 창을 자른다. BTC 는 자기 마지막 봉 기준 [last - 2y, last] 포함 경계(731행, 실측).
 WINDOW_SPAN = {"spy": pd.DateOffset(years=2), "vix": pd.DateOffset(years=2), "fang": pd.DateOffset(years=2),
                "watch": pd.DateOffset(years=1), "btc": pd.DateOffset(years=2)}
+
+
+def _span_label(off: pd.DateOffset) -> str:
+    """DateOffset(years=2) → '2y' (창 규칙 식별 문자열용). kwds 가 비면 ValueError — 규칙을 기록할 수 없다."""
+    if not off.kwds:
+        raise ValueError(f"창 오프셋에 단위가 없음: {off!r}")
+    return "".join(f"{n}{unit[0]}" for unit, n in sorted(off.kwds.items()))
+
+
+# 창 규칙 식별자 — replay attrs 와 백테스트 산출물(summary_v0_*.json 의 run.window_rule)에 기록한다.
+# scripts/run_backtest_v0.py --reuse-replay 는 이 값이 현재 코드와 다른(또는 기록이 없는) CSV 를 재사용하지 않고 재현을 다시 돌린다 —
+# 창 규칙을 고친 코드가 옛 규칙으로 만든 벤치마크와 조용히 공존하는 일(504행 고정 → 달력 창 교정, VALIDATION.md 실험 #1b)을 막는다.
+# WINDOW_SPAN 에서 파생하므로 창 길이를 바꾸면 값이 저절로 바뀐다; 경계 규칙(배타/포함)을 바꾸면 뒤쪽 문구도 같이 바꿔야 한다.
+WINDOW_RULE = ("calendar|" + ",".join(f"{k}={_span_label(v)}" for k, v in WINDOW_SPAN.items())
+               + "|spy,vix,fang,watch:(asof-span,asof]|btc:[last_bar-span,last_bar]")
 # 라이브 30m 봉 period="30d" 는 인트라데이에선 30 세션이다 (2026-09-07 실측: 2026-07-27~09-04 = 30세션)
 EOD_SESSIONS = 30
 # reference build_metrics 에 인라인된 P9 모멘텀 봉수

@@ -151,3 +151,51 @@ def test_daily_offline_writes_one_ledger_row_and_index(tmp_path):
     for s in ("오늘 판정", "faithful", "completed", "장부 요약", "정직 문구", "자료"):
         assert s in txt
     assert 'href="backtest_v0.html"' in (docs / "index.html").read_text(encoding="utf-8")
+
+
+def test_reuse_replay_refuses_other_window_rule_or_signals_hash(tmp_path):
+    """창 규칙 보호: summary JSON 의 run.window_rule / run.signals_v0_sha256 가 현재 코드와 같을 때만 --reuse-replay 가 CSV 를
+    재사용한다. 다르거나(옛 504행 규칙으로 만든 벤치마크) JSON 이 없으면 재현을 다시 돌리고 현재 규칙을 다시 기록한다."""
+    import contextlib
+    import io
+    from mrl import signals_v0 as S
+    from scripts import run_backtest_v0 as RB
+    spy = pd.read_csv(DATA_DIR / "spy_ohlc.csv", index_col="date", parse_dates=["date"])
+    start, end = spy.index[-5], spy.index[-1]
+    results, docs = tmp_path / "results", tmp_path / "docs"
+    common = ["--variant", "faithful", "--start", f"{start:%Y-%m-%d}", "--end", f"{end:%Y-%m-%d}",
+              "--results-dir", str(results), "--docs-dir", str(docs), "--verify", "0", "--no-progress"]
+    assert RB.main(common) == 0
+    jp = results / "summary_v0_faithful.json"
+    js = _strict_json(jp)
+    assert js["run"]["window_rule"] == S.WINDOW_RULE
+    assert S.WINDOW_RULE.startswith("calendar|") and "spy=2y" in S.WINDOW_RULE and "watch=1y" in S.WINDOW_RULE
+    assert re.fullmatch(r"[0-9a-f]{64}", js["run"]["signals_v0_sha256"]) and js["run"]["signals_v0_sha256"] == RB._signals_hash()
+    csv_mtime = (results / "backtest_v0_faithful.csv").stat().st_mtime_ns
+
+    def run_reuse() -> str:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert RB.main(common + ["--reuse-replay"]) == 0
+        return buf.getvalue()
+
+    # 1) 출처가 같으면 재사용 (CSV 를 다시 쓰지 않는다)
+    out = run_reuse()
+    assert "저장된 CSV 재사용" in out and (results / "backtest_v0_faithful.csv").stat().st_mtime_ns == csv_mtime
+    # 2) 창 규칙이 다르면(옛 504행 고정 규칙) 재현 실행 → 현재 규칙을 다시 기록
+    js["run"]["window_rule"] = "rows|spy=504,vix=504,fang=504,watch=252,btc=731"
+    jp.write_text(json.dumps(js, ensure_ascii=False), encoding="utf-8")
+    out = run_reuse()
+    assert "창 규칙" in out and "저장된 CSV 재사용" not in out
+    assert _strict_json(jp)["run"]["window_rule"] == S.WINDOW_RULE
+    # 3) signals_v0.py 해시가 다르면 재현 실행
+    js = _strict_json(jp)
+    js["run"]["signals_v0_sha256"] = "0" * 64
+    jp.write_text(json.dumps(js, ensure_ascii=False), encoding="utf-8")
+    out = run_reuse()
+    assert "해시" in out and "저장된 CSV 재사용" not in out
+    assert _strict_json(jp)["run"]["signals_v0_sha256"] == RB._signals_hash()
+    # 4) JSON 이 없으면 출처를 증명할 수 없다 → 재현 실행
+    jp.unlink()
+    out = run_reuse()
+    assert "증명할 수 없어" in out and "저장된 CSV 재사용" not in out and jp.exists()

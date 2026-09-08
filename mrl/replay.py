@@ -233,7 +233,8 @@ def replay_v0(bundle: Bundle, start=BACKTEST_START, end=None, variant: str = "fa
     """거래일마다 signals_v0.v0_day 를 호출해 v0 판정을 재현한다.
 
     반환 DataFrame: 인덱스 = 거래일(name="date"), 열 = REPLAY_COLUMNS + EXTRA_COLUMNS.
-    attrs: variant, basket, start, end, n_days, runtime_sec, ms_per_day, warnings(dict: 범주 → n/first/last).
+    attrs: variant, basket, start, end, n_days, runtime_sec, ms_per_day, warnings(dict: 범주 → n/first/last),
+           window_rule(signals_v0.WINDOW_RULE — 재현에 쓴 창 규칙).
     실패(하루라도 v0_day 예외)는 날짜를 붙여 RuntimeError 로 올린다.
     """
     if variant not in S.VARIANTS:
@@ -287,6 +288,7 @@ def replay_v0(bundle: Bundle, start=BACKTEST_START, end=None, variant: str = "fa
         "start": days[0].strftime("%Y-%m-%d"), "end": days[-1].strftime("%Y-%m-%d"),
         "n_days": int(n), "runtime_sec": round(runtime, 2), "ms_per_day": round(runtime / n * 1000, 2),
         "warnings": warn_counts,
+        "window_rule": S.WINDOW_RULE,        # 이 재현이 쓴 창 규칙 — 산출물에 기록해 다른 규칙의 CSV 재사용을 막는다
     })
     if warn_counts:
         summary = "; ".join(f"{k} ×{v['n']} ({v['first']}~{v['last']})" for k, v in warn_counts.items())

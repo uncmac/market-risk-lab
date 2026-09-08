@@ -1,5 +1,5 @@
 {
- "generated_at_utc": "2026-09-07T23:03:56Z",
+ "generated_at_utc": "2026-09-08T00:29:09Z",
  "start": "2015-01-02",
  "end": "2026-09-04",
  "basket": "v0",
@@ -8,57 +8,72 @@
   "faithful": {
    "headline": {
     "hit_20_by_tone": {
-     "buy": 0.7096774193548387,
-     "hold": 0.7077205882352942,
-     "neutral": 0.7099391480730223,
-     "caution": 0.32838589981447125,
-     "reduce": 0.34317343173431736
+     "buy": 0.7102272727272727,
+     "hold": 0.7064220183486238,
+     "neutral": 0.7125506072874493,
+     "caution": 0.3302411873840445,
+     "reduce": 0.3432098765432099
     },
     "n_20_by_tone": {
-     "buy": 527,
-     "hold": 544,
-     "neutral": 493,
+     "buy": 528,
+     "hold": 545,
+     "neutral": 494,
      "caution": 539,
-     "reduce": 813
+     "reduce": 810
     },
     "baseline_20": 0.6875857338820301,
-    "hit_20_all": 0.5366941015089163,
-    "hit_60_all": 0.5066063977746871,
+    "hit_20_all": 0.5377229080932785,
+    "hit_60_all": 0.5069541029207232,
     "baseline_60": 0.7621696801112656,
     "dd5_20_rate_by_tone": {
-     "buy": 0.1461100569259962,
-     "hold": 0.10845588235294118,
-     "neutral": 0.14198782961460446,
+     "buy": 0.14583333333333334,
+     "hold": 0.10825688073394496,
+     "neutral": 0.1417004048582996,
      "caution": 0.15398886827458255,
-     "reduce": 0.17220172201722017
+     "reduce": 0.1728395061728395
     },
     "dd5_20_base_rate": 0.147119341563786,
     "detection_rate_10": 1.0,
     "median_lead_10": 19.0,
     "n_evaluable_10": 6,
     "n_detected_10": 6,
+    "median_lead_10_fresh": 16.0,
+    "n_lead_capped_10": 3,
+    "lookback": 20,
+    "null_detection_rate_10": 1.0,
+    "null_detection_100_share_10": 1.0,
+    "null_median_lead_10": 19.0,
     "detection_rate_5": 1.0,
     "median_lead_5": 17.0,
     "n_evaluable_5": 15,
     "n_detected_5": 15,
-    "false_alarms_per_year": 28.66757493188011,
-    "tone_switches_per_year": 106.94550408719347,
-    "cagr_strategy": 0.08693831372542693,
-    "cagr_bh": 0.1386904504411557,
-    "maxdd_strategy": -0.18929132077401223,
-    "maxdd_bh": -0.3371726120851086,
-    "worst_month_strategy": -0.09452146708715614,
-    "worst_month_bh": -0.12487108710815098
+    "median_lead_5_fresh": 16.0,
+    "n_lead_capped_5": 5,
+    "null_detection_rate_5": 0.9990000000000001,
+    "null_median_lead_5": 19.0,
+    "false_alarms_per_year": 28.58174386920981,
+    "false_alarm_rate": 0.8903743315508021,
+    "false_alarm_rate_baseline": 0.852880658436214,
+    "true_alarm_share": 0.10962566844919786,
+    "true_alarm_share_baseline": 0.147119341563786,
+    "null_true_alarm_share": 0.1457599979170678,
+    "tone_switches_per_year": 106.43051771117166,
+    "cagr_strategy": 0.0865857360133897,
+    "cagr_bh": 0.13869048558726438,
+    "maxdd_strategy": -0.18929062102129857,
+    "maxdd_bh": -0.3371726426699484,
+    "worst_month_strategy": -0.09452152281342396,
+    "worst_month_bh": -0.12487135096570423
    },
    "run": {
-    "generated_at_utc": "2026-09-07T23:00:33Z",
+    "generated_at_utc": "2026-09-08T00:29:00Z",
     "variant": "faithful",
     "basket": "v0",
     "start": "2015-01-02",
     "end": "2026-09-04",
     "n_days": 2936,
-    "replay_runtime_sec": 203.42,
-    "ms_per_day": 69.29,
+    "replay_runtime_sec": 242.34,
+    "ms_per_day": 82.54,
     "verify": {
      "n_checked": 30,
      "dates": [
@@ -93,7 +108,7 @@
       "2025-11-18",
       "2026-04-14"
      ],
-     "ms_per_day_full": 67.6,
+     "ms_per_day_full": 67.1,
      "variant": "faithful",
      "basket": "v0"
     },
@@ -104,9 +119,14 @@
      "20": 4
     },
     "cache": {
-     "fetched_at_utc": "2026-09-07T22:55:07Z",
+     "fetched_at_utc": "2026-09-08T00:27:20Z",
      "spy_last": "2026-09-04",
-     "yfinance_version": "1.2.1"
+     "spy_last_bar_complete": true,
+     "spy_last_used": "2026-09-04",
+     "yfinance_version": "1.2.1",
+     "warnings": [
+      "유령 행 제거(SPY 마지막 2026-09-04 이후): CL=F×1, DX-Y.NYB×1, GC=F×1, HG=F×1, KRW=X×2, ^VIX×1"
+     ]
     },
     "python": "3.13.5",
     "pandas": "2.2.3",
@@ -162,14 +182,16 @@
       "first": "2024-01-11",
       "last": "2026-06-11"
      }
-    }
+    },
+    "window_rule": "calendar|spy=2y,vix=2y,fang=2y,watch=1y,btc=2y|spy,vix,fang,watch:(asof-span,asof]|btc:[last_bar-span,last_bar]",
+    "signals_v0_sha256": "d4927bf98b9264bf56c716b2d1e33dfea2309d4d3a4fef3c9aac80c9f935c5f4"
    },
    "tone_share": {
-    "buy": 0.180858310626703,
-    "hold": 0.18630790190735694,
-    "neutral": 0.1699591280653951,
-    "caution": 0.1842643051771117,
-    "reduce": 0.2786103542234332
+    "buy": 0.18119891008174388,
+    "hold": 0.1869891008174387,
+    "neutral": 0.17029972752043596,
+    "caution": 0.18392370572207084,
+    "reduce": 0.2775885558583106
    },
    "artifacts": {
     "replay_csv": "C:\\Users\\CJY_Laptop\\market-risk-lab\\results\\backtest_v0_faithful.csv",
@@ -180,57 +202,72 @@
   "completed": {
    "headline": {
     "hit_20_by_tone": {
-     "buy": 0.7276422764227642,
-     "hold": 0.7020833333333333,
-     "neutral": 0.7137931034482758,
-     "caution": 0.3486088379705401,
-     "reduce": 0.3386454183266932
+     "buy": 0.7232323232323232,
+     "hold": 0.70625,
+     "neutral": 0.7150259067357513,
+     "caution": 0.34539473684210525,
+     "reduce": 0.3421750663129973
     },
     "n_20_by_tone": {
-     "buy": 492,
+     "buy": 495,
      "hold": 480,
-     "neutral": 580,
-     "caution": 611,
-     "reduce": 753
+     "neutral": 579,
+     "caution": 608,
+     "reduce": 754
     },
     "baseline_20": 0.6875857338820301,
-    "hit_20_all": 0.5408093278463649,
-    "hit_60_all": 0.5243393602225312,
+    "hit_20_all": 0.5414951989026063,
+    "hit_60_all": 0.5257301808066759,
     "baseline_60": 0.7621696801112656,
     "dd5_20_rate_by_tone": {
-     "buy": 0.12398373983739837,
-     "hold": 0.11041666666666666,
-     "neutral": 0.1103448275862069,
-     "caution": 0.18003273322422259,
-     "reduce": 0.18725099601593626
+     "buy": 0.12323232323232323,
+     "hold": 0.10833333333333334,
+     "neutral": 0.10880829015544041,
+     "caution": 0.18092105263157895,
+     "reduce": 0.1896551724137931
     },
     "dd5_20_base_rate": 0.147119341563786,
     "detection_rate_10": 1.0,
     "median_lead_10": 20.0,
     "n_evaluable_10": 6,
     "n_detected_10": 6,
+    "median_lead_10_fresh": 12.5,
+    "n_lead_capped_10": 4,
+    "lookback": 20,
+    "null_detection_rate_10": 1.0,
+    "null_detection_100_share_10": 1.0,
+    "null_median_lead_10": 19.0,
     "detection_rate_5": 1.0,
     "median_lead_5": 18.0,
     "n_evaluable_5": 15,
     "n_detected_5": 15,
-    "false_alarms_per_year": 20.341961852861036,
-    "tone_switches_per_year": 82.91280653950955,
-    "cagr_strategy": 0.09888850803924876,
-    "cagr_bh": 0.1386904504411557,
-    "maxdd_strategy": -0.16055608657759224,
-    "maxdd_bh": -0.3371726120851086,
-    "worst_month_strategy": -0.0773160955168346,
-    "worst_month_bh": -0.12487108710815098
+    "median_lead_5_fresh": 16.0,
+    "n_lead_capped_5": 6,
+    "null_detection_rate_5": 0.9976666666666667,
+    "null_median_lead_5": 19.0,
+    "false_alarms_per_year": 20.427792915531334,
+    "false_alarm_rate": 0.8717948717948718,
+    "false_alarm_rate_baseline": 0.852880658436214,
+    "true_alarm_share": 0.1282051282051282,
+    "true_alarm_share_baseline": 0.147119341563786,
+    "null_true_alarm_share": 0.1470461268527885,
+    "tone_switches_per_year": 82.56948228882834,
+    "cagr_strategy": 0.0990466291704557,
+    "cagr_bh": 0.13869048558726438,
+    "maxdd_strategy": -0.1605557760963291,
+    "maxdd_bh": -0.3371726426699484,
+    "worst_month_strategy": -0.07731614883017024,
+    "worst_month_bh": -0.12487135096570423
    },
    "run": {
-    "generated_at_utc": "2026-09-07T23:03:54Z",
+    "generated_at_utc": "2026-09-08T00:29:08Z",
     "variant": "completed",
     "basket": "v0",
     "start": "2015-01-02",
     "end": "2026-09-04",
     "n_days": 2936,
-    "replay_runtime_sec": 196.34,
-    "ms_per_day": 66.87,
+    "replay_runtime_sec": 221.0,
+    "ms_per_day": 75.27,
     "verify": {
      "n_checked": 30,
      "dates": [
@@ -265,7 +302,7 @@
       "2025-11-18",
       "2026-04-14"
      ],
-     "ms_per_day_full": 67.6,
+     "ms_per_day_full": 75.5,
      "variant": "completed",
      "basket": "v0"
     },
@@ -276,9 +313,14 @@
      "20": 4
     },
     "cache": {
-     "fetched_at_utc": "2026-09-07T22:55:07Z",
+     "fetched_at_utc": "2026-09-08T00:27:20Z",
      "spy_last": "2026-09-04",
-     "yfinance_version": "1.2.1"
+     "spy_last_bar_complete": true,
+     "spy_last_used": "2026-09-04",
+     "yfinance_version": "1.2.1",
+     "warnings": [
+      "유령 행 제거(SPY 마지막 2026-09-04 이후): CL=F×1, DX-Y.NYB×1, GC=F×1, HG=F×1, KRW=X×2, ^VIX×1"
+     ]
     },
     "python": "3.13.5",
     "pandas": "2.2.3",
@@ -334,14 +376,16 @@
       "first": "2024-01-11",
       "last": "2026-06-11"
      }
-    }
+    },
+    "window_rule": "calendar|spy=2y,vix=2y,fang=2y,watch=1y,btc=2y|spy,vix,fang,watch:(asof-span,asof]|btc:[last_bar-span,last_bar]",
+    "signals_v0_sha256": "d4927bf98b9264bf56c716b2d1e33dfea2309d4d3a4fef3c9aac80c9f935c5f4"
    },
    "tone_share": {
-    "buy": 0.1685967302452316,
+    "buy": 0.16961852861035423,
     "hold": 0.1638283378746594,
-    "neutral": 0.2016348773841962,
-    "caution": 0.20810626702997276,
-    "reduce": 0.25783378746594005
+    "neutral": 0.2012942779291553,
+    "caution": 0.20708446866485014,
+    "reduce": 0.25817438692098094
    },
    "artifacts": {
     "replay_csv": "C:\\Users\\CJY_Laptop\\market-risk-lab\\results\\backtest_v0_completed.csv",
@@ -353,5 +397,5 @@
  "artifacts": {
   "comparison_html": "C:\\Users\\CJY_Laptop\\market-risk-lab\\docs\\backtest_v0.html"
  },
- "total_runtime_sec": 408.7
+ "total_runtime_sec": 13.8
 }
