@@ -1,0 +1,357 @@
+{
+ "generated_at_utc": "2026-09-07T23:03:56Z",
+ "start": "2015-01-02",
+ "end": "2026-09-04",
+ "basket": "v0",
+ "episode_split": false,
+ "variants": {
+  "faithful": {
+   "headline": {
+    "hit_20_by_tone": {
+     "buy": 0.7096774193548387,
+     "hold": 0.7077205882352942,
+     "neutral": 0.7099391480730223,
+     "caution": 0.32838589981447125,
+     "reduce": 0.34317343173431736
+    },
+    "n_20_by_tone": {
+     "buy": 527,
+     "hold": 544,
+     "neutral": 493,
+     "caution": 539,
+     "reduce": 813
+    },
+    "baseline_20": 0.6875857338820301,
+    "hit_20_all": 0.5366941015089163,
+    "hit_60_all": 0.5066063977746871,
+    "baseline_60": 0.7621696801112656,
+    "dd5_20_rate_by_tone": {
+     "buy": 0.1461100569259962,
+     "hold": 0.10845588235294118,
+     "neutral": 0.14198782961460446,
+     "caution": 0.15398886827458255,
+     "reduce": 0.17220172201722017
+    },
+    "dd5_20_base_rate": 0.147119341563786,
+    "detection_rate_10": 1.0,
+    "median_lead_10": 19.0,
+    "n_evaluable_10": 6,
+    "n_detected_10": 6,
+    "detection_rate_5": 1.0,
+    "median_lead_5": 17.0,
+    "n_evaluable_5": 15,
+    "n_detected_5": 15,
+    "false_alarms_per_year": 28.66757493188011,
+    "tone_switches_per_year": 106.94550408719347,
+    "cagr_strategy": 0.08693831372542693,
+    "cagr_bh": 0.1386904504411557,
+    "maxdd_strategy": -0.18929132077401223,
+    "maxdd_bh": -0.3371726120851086,
+    "worst_month_strategy": -0.09452146708715614,
+    "worst_month_bh": -0.12487108710815098
+   },
+   "run": {
+    "generated_at_utc": "2026-09-07T23:00:33Z",
+    "variant": "faithful",
+    "basket": "v0",
+    "start": "2015-01-02",
+    "end": "2026-09-04",
+    "n_days": 2936,
+    "replay_runtime_sec": 203.42,
+    "ms_per_day": 69.29,
+    "verify": {
+     "n_checked": 30,
+     "dates": [
+      "2015-01-14",
+      "2015-03-13",
+      "2015-05-26",
+      "2015-06-24",
+      "2015-11-13",
+      "2017-01-11",
+      "2018-02-14",
+      "2018-03-23",
+      "2018-07-25",
+      "2019-08-06",
+      "2020-11-03",
+      "2020-11-25",
+      "2021-04-27",
+      "2021-06-17",
+      "2021-07-06",
+      "2022-01-13",
+      "2022-05-05",
+      "2022-05-11",
+      "2022-07-13",
+      "2022-10-20",
+      "2023-06-22",
+      "2023-07-10",
+      "2023-12-01",
+      "2024-06-05",
+      "2024-07-01",
+      "2024-10-29",
+      "2024-12-27",
+      "2025-08-06",
+      "2025-11-18",
+      "2026-04-14"
+     ],
+     "ms_per_day_full": 67.6,
+     "variant": "faithful",
+     "basket": "v0"
+    },
+    "episode_split": false,
+    "n_episodes_1993": {
+     "5": 36,
+     "10": 12,
+     "20": 4
+    },
+    "cache": {
+     "fetched_at_utc": "2026-09-07T22:55:07Z",
+     "spy_last": "2026-09-04",
+     "yfinance_version": "1.2.1"
+    },
+    "python": "3.13.5",
+    "pandas": "2.2.3",
+    "numpy": "2.1.3",
+    "replay_warnings": {
+     "워치리스트 ['URNM', 'SPCX', 'NVDU', 'IBIT', 'PLTR'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 1239,
+      "first": "2015-01-02",
+      "last": "2019-12-03"
+     },
+     "EOD <date> 세션 없음(이력 이전·반일장·결손) → P6 가중치 제외": {
+      "n": 2214,
+      "first": "2015-01-02",
+      "last": "2026-01-30"
+     },
+     "F&G <date> 점수 없음 → P3 가중치 제외": {
+      "n": 1407,
+      "first": "2015-01-02",
+      "last": "2026-07-15"
+     },
+     "워치리스트 ['SPCX', 'NVDU', 'IBIT', 'PLTR'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 207,
+      "first": "2019-12-04",
+      "last": "2020-09-29"
+     },
+     "F&G d_daily: <date> 기준 1거래일 전 점수 없음 → 변화 0 으로 처리": {
+      "n": 1,
+      "first": "2020-08-03",
+      "last": "2020-08-03"
+     },
+     "F&G d_weekly: <date> 기준 5거래일 전 점수 없음 → 변화 0 으로 처리": {
+      "n": 5,
+      "first": "2020-08-03",
+      "last": "2020-08-07"
+     },
+     "F&G d_monthly: <date> 기준 21거래일 전 점수 없음 → 변화 0 으로 처리": {
+      "n": 21,
+      "first": "2020-08-03",
+      "last": "2020-08-31"
+     },
+     "워치리스트 ['SPCX', 'NVDU', 'IBIT'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 742,
+      "first": "2020-09-30",
+      "last": "2023-09-12"
+     },
+     "워치리스트 ['SPCX', 'IBIT'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 83,
+      "first": "2023-09-13",
+      "last": "2024-01-10"
+     },
+     "워치리스트 ['SPCX'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 606,
+      "first": "2024-01-11",
+      "last": "2026-06-11"
+     }
+    }
+   },
+   "tone_share": {
+    "buy": 0.180858310626703,
+    "hold": 0.18630790190735694,
+    "neutral": 0.1699591280653951,
+    "caution": 0.1842643051771117,
+    "reduce": 0.2786103542234332
+   },
+   "artifacts": {
+    "replay_csv": "C:\\Users\\CJY_Laptop\\market-risk-lab\\results\\backtest_v0_faithful.csv",
+    "summary_json": "C:\\Users\\CJY_Laptop\\market-risk-lab\\results\\summary_v0_faithful.json",
+    "report_html": "C:\\Users\\CJY_Laptop\\market-risk-lab\\docs\\backtest_v0_faithful.html"
+   }
+  },
+  "completed": {
+   "headline": {
+    "hit_20_by_tone": {
+     "buy": 0.7276422764227642,
+     "hold": 0.7020833333333333,
+     "neutral": 0.7137931034482758,
+     "caution": 0.3486088379705401,
+     "reduce": 0.3386454183266932
+    },
+    "n_20_by_tone": {
+     "buy": 492,
+     "hold": 480,
+     "neutral": 580,
+     "caution": 611,
+     "reduce": 753
+    },
+    "baseline_20": 0.6875857338820301,
+    "hit_20_all": 0.5408093278463649,
+    "hit_60_all": 0.5243393602225312,
+    "baseline_60": 0.7621696801112656,
+    "dd5_20_rate_by_tone": {
+     "buy": 0.12398373983739837,
+     "hold": 0.11041666666666666,
+     "neutral": 0.1103448275862069,
+     "caution": 0.18003273322422259,
+     "reduce": 0.18725099601593626
+    },
+    "dd5_20_base_rate": 0.147119341563786,
+    "detection_rate_10": 1.0,
+    "median_lead_10": 20.0,
+    "n_evaluable_10": 6,
+    "n_detected_10": 6,
+    "detection_rate_5": 1.0,
+    "median_lead_5": 18.0,
+    "n_evaluable_5": 15,
+    "n_detected_5": 15,
+    "false_alarms_per_year": 20.341961852861036,
+    "tone_switches_per_year": 82.91280653950955,
+    "cagr_strategy": 0.09888850803924876,
+    "cagr_bh": 0.1386904504411557,
+    "maxdd_strategy": -0.16055608657759224,
+    "maxdd_bh": -0.3371726120851086,
+    "worst_month_strategy": -0.0773160955168346,
+    "worst_month_bh": -0.12487108710815098
+   },
+   "run": {
+    "generated_at_utc": "2026-09-07T23:03:54Z",
+    "variant": "completed",
+    "basket": "v0",
+    "start": "2015-01-02",
+    "end": "2026-09-04",
+    "n_days": 2936,
+    "replay_runtime_sec": 196.34,
+    "ms_per_day": 66.87,
+    "verify": {
+     "n_checked": 30,
+     "dates": [
+      "2015-01-14",
+      "2015-03-13",
+      "2015-05-26",
+      "2015-06-24",
+      "2015-11-13",
+      "2017-01-11",
+      "2018-02-14",
+      "2018-03-23",
+      "2018-07-25",
+      "2019-08-06",
+      "2020-11-03",
+      "2020-11-25",
+      "2021-04-27",
+      "2021-06-17",
+      "2021-07-06",
+      "2022-01-13",
+      "2022-05-05",
+      "2022-05-11",
+      "2022-07-13",
+      "2022-10-20",
+      "2023-06-22",
+      "2023-07-10",
+      "2023-12-01",
+      "2024-06-05",
+      "2024-07-01",
+      "2024-10-29",
+      "2024-12-27",
+      "2025-08-06",
+      "2025-11-18",
+      "2026-04-14"
+     ],
+     "ms_per_day_full": 67.6,
+     "variant": "completed",
+     "basket": "v0"
+    },
+    "episode_split": false,
+    "n_episodes_1993": {
+     "5": 36,
+     "10": 12,
+     "20": 4
+    },
+    "cache": {
+     "fetched_at_utc": "2026-09-07T22:55:07Z",
+     "spy_last": "2026-09-04",
+     "yfinance_version": "1.2.1"
+    },
+    "python": "3.13.5",
+    "pandas": "2.2.3",
+    "numpy": "2.1.3",
+    "replay_warnings": {
+     "워치리스트 ['URNM', 'SPCX', 'NVDU', 'IBIT', 'PLTR'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 1239,
+      "first": "2015-01-02",
+      "last": "2019-12-03"
+     },
+     "EOD <date> 세션 없음(이력 이전·반일장·결손) → P6 가중치 제외": {
+      "n": 2214,
+      "first": "2015-01-02",
+      "last": "2026-01-30"
+     },
+     "F&G <date> 점수 없음 → P3 가중치 제외": {
+      "n": 1407,
+      "first": "2015-01-02",
+      "last": "2026-07-15"
+     },
+     "워치리스트 ['SPCX', 'NVDU', 'IBIT', 'PLTR'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 207,
+      "first": "2019-12-04",
+      "last": "2020-09-29"
+     },
+     "F&G d_daily: <date> 기준 1거래일 전 점수 없음 → 변화 0 으로 처리": {
+      "n": 1,
+      "first": "2020-08-03",
+      "last": "2020-08-03"
+     },
+     "F&G d_weekly: <date> 기준 5거래일 전 점수 없음 → 변화 0 으로 처리": {
+      "n": 5,
+      "first": "2020-08-03",
+      "last": "2020-08-07"
+     },
+     "F&G d_monthly: <date> 기준 21거래일 전 점수 없음 → 변화 0 으로 처리": {
+      "n": 21,
+      "first": "2020-08-03",
+      "last": "2020-08-31"
+     },
+     "워치리스트 ['SPCX', 'NVDU', 'IBIT'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 742,
+      "first": "2020-09-30",
+      "last": "2023-09-12"
+     },
+     "워치리스트 ['SPCX', 'IBIT'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 83,
+      "first": "2023-09-13",
+      "last": "2024-01-10"
+     },
+     "워치리스트 ['SPCX'] 은 <date> 창에 데이터 없음 → 제외": {
+      "n": 606,
+      "first": "2024-01-11",
+      "last": "2026-06-11"
+     }
+    }
+   },
+   "tone_share": {
+    "buy": 0.1685967302452316,
+    "hold": 0.1638283378746594,
+    "neutral": 0.2016348773841962,
+    "caution": 0.20810626702997276,
+    "reduce": 0.25783378746594005
+   },
+   "artifacts": {
+    "replay_csv": "C:\\Users\\CJY_Laptop\\market-risk-lab\\results\\backtest_v0_completed.csv",
+    "summary_json": "C:\\Users\\CJY_Laptop\\market-risk-lab\\results\\summary_v0_completed.json",
+    "report_html": "C:\\Users\\CJY_Laptop\\market-risk-lab\\docs\\backtest_v0_completed.html"
+   }
+  }
+ },
+ "artifacts": {
+  "comparison_html": "C:\\Users\\CJY_Laptop\\market-risk-lab\\docs\\backtest_v0.html"
+ },
+ "total_runtime_sec": 408.7
+}

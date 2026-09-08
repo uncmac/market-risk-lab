@@ -1,0 +1,93 @@
+# 매주 일요일 보정 작업 — 캐시 전량 재구축(build_cache.py) → v0 백테스트(run_backtest_v0.py --variant both) → 커밋
+#
+#   * 13:00 UTC 일요일 = 09:00 EDT / 08:00 EST. 시장이 닫혀 있어 완성 봉만 존재한다.
+#   * 가격 캐시는 증분 append 가 아니라 전량 재다운로드(자동조정 재계산 때문, ARCHITECTURE.md 디렉터리 절).
+#     fg_history / spy_eod / cboe 는 append — 원천이 과거를 다시 주지 않는다.
+#   * daily.yml 과 같은 concurrency 그룹이라 두 워크플로가 동시에 커밋하지 않는다.
+#   * 수동 실행 시 variant 를 고를 수 있다(기본 both). Phase 2 에서는 보정 작업 단계가 여기에 추가된다.
+name: weekly
+
+on:
+  schedule:
+    - cron: "0 13 * * 0"
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "백테스트 변형 (faithful / completed / both)"
+        type: choice
+        default: both
+        options:
+          - both
+          - faithful
+          - completed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: risk-lab
+  cancel-in-progress: false
+
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONUNBUFFERED: "1"
+  MPLBACKEND: Agg
+
+jobs:
+  rebuild:
+    name: 캐시 재구축 + v0 백테스트 + 커밋
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 의존성 설치 (requirements.txt 고정 버전)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: scripts/build_cache.py (전량 재구축 + append 계열 갱신 + meta.json)
+        run: python scripts/build_cache.py
+
+      - name: scripts/run_backtest_v0.py (replay → targets → evaluate → results/ + docs/backtest_v0.html)
+        env:
+          VARIANT: ${{ github.event.inputs.variant || 'both' }}
+        run: python scripts/run_backtest_v0.py --variant "${VARIANT}"
+
+      - name: data/ docs/ results/ 커밋 및 푸시
+        shell: bash
+        run: |
+          set -euo pipefail
+          today_et="$(TZ=America/New_York date +%F)"
+          commit_msg="weekly: ${today_et}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for d in data docs results; do
+            if [ -d "$d" ]; then
+              git add -A -- "$d"
+            fi
+          done
+          if git diff --cached --quiet; then
+            echo "변경 없음 — 커밋 생략"
+            exit 0
+          fi
+          git commit -m "${commit_msg}"
+          # 서버 쪽에 새 커밋이 있으면 리베이스(-X theirs = 방금 만든 로컬 커밋 편) 후 푸시. 실패 시 3회 재시도.
+          for attempt in 1 2 3; do
+            if git pull --rebase -X theirs origin "${GITHUB_REF_NAME}" && git push origin HEAD:"${GITHUB_REF_NAME}"; then
+              echo "푸시 완료: ${commit_msg}"
+              exit 0
+            fi
+            echo "푸시 실패 (${attempt}/3) — 리베이스 정리 후 재시도"
+            git rebase --abort || true
+            sleep 15
+          done
+          echo "::error::3회 시도 후에도 푸시하지 못했습니다"
+          exit 1

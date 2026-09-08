@@ -1,0 +1,549 @@
+{
+  "schema_version": 1,
+  "mode": "update",
+  "fetched_at_utc": "2026-09-08T00:01:06Z",
+  "fetched_at_et": "2026-09-07 20:01 ET",
+  "python_version": "3.13.5",
+  "yfinance_version": "1.2.1",
+  "pandas_version": "2.2.3",
+  "numpy_version": "2.1.3",
+  "price_period": "max",
+  "requested_tickers": [
+    "AAL",
+    "AAPL",
+    "AMD",
+    "AMZN",
+    "BLK",
+    "BTC-USD",
+    "CL=F",
+    "DX-Y.NYB",
+    "FAS",
+    "GC=F",
+    "GOOGL",
+    "HG=F",
+    "HYG",
+    "IBIT",
+    "IEF",
+    "IWM",
+    "JNK",
+    "KO",
+    "KORU",
+    "KRW=X",
+    "LQD",
+    "META",
+    "MSFT",
+    "MTUM",
+    "NFLX",
+    "NVDA",
+    "NVDU",
+    "PHO",
+    "PLTR",
+    "QQQ",
+    "RSP",
+    "SMH",
+    "SOXL",
+    "SOXX",
+    "SPCX",
+    "SPHB",
+    "SPLV",
+    "SPXL",
+    "SPY",
+    "TLT",
+    "TSLA",
+    "UDOW",
+    "URA",
+    "URNM",
+    "UUP",
+    "VLO",
+    "XLB",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLU",
+    "XLV",
+    "XLY",
+    "^FVX",
+    "^GSPC",
+    "^IRX",
+    "^RUT",
+    "^SOX",
+    "^TNX",
+    "^TYX",
+    "^VIX"
+  ],
+  "missing_tickers": [],
+  "spy_last": "2026-09-04",
+  "spy_last_bar_complete": true,
+  "fg": {
+    "seed_date": "2026-08-25",
+    "last_point_utc": "2026-09-04T23:59:43Z",
+    "last_point_is_live": true,
+    "n_fetched": 9
+  },
+  "eod_period": "60d",
+  "warnings": [
+    "유령 행 제거(SPY 마지막 2026-09-04 이후): CL=F×1, DX-Y.NYB×1, GC=F×1, HG=F×1, KRW=X×2, ^VIX×1"
+  ],
+  "guards": {
+    "checked_at_utc": "2026-09-08T00:01:13Z",
+    "spy_last": "2026-09-04",
+    "phantom_cells": {
+      "CL=F": 1,
+      "DX-Y.NYB": 1,
+      "GC=F": 1,
+      "HG=F": 1,
+      "KRW=X": 2,
+      "^VIX": 1
+    },
+    "dropped_rows_after_spy_last": {},
+    "stale_tickers": {},
+    "empty_columns": [],
+    "twenty_four_seven": [
+      "BTC-USD"
+    ]
+  },
+  "tickers": {
+    "AAL": {
+      "first": "2005-09-27",
+      "last": "2026-09-04",
+      "n": 5268
+    },
+    "AAPL": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8458
+    },
+    "AMD": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8458
+    },
+    "AMZN": {
+      "first": "1997-05-15",
+      "last": "2026-09-04",
+      "n": 7373
+    },
+    "BLK": {
+      "first": "1999-10-01",
+      "last": "2026-09-04",
+      "n": 6773
+    },
+    "BTC-USD": {
+      "first": "2014-09-17",
+      "last": "2026-09-08",
+      "n": 4374
+    },
+    "CL=F": {
+      "first": "2000-08-23",
+      "last": "2026-09-04",
+      "n": 6537
+    },
+    "DX-Y.NYB": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8542
+    },
+    "FAS": {
+      "first": "2008-11-19",
+      "last": "2026-09-04",
+      "n": 4475
+    },
+    "GC=F": {
+      "first": "2000-08-30",
+      "last": "2026-09-04",
+      "n": 6528
+    },
+    "GOOGL": {
+      "first": "2004-08-19",
+      "last": "2026-09-04",
+      "n": 5547
+    },
+    "HG=F": {
+      "first": "2000-08-30",
+      "last": "2026-09-04",
+      "n": 6533
+    },
+    "HYG": {
+      "first": "2007-04-11",
+      "last": "2026-09-04",
+      "n": 4883
+    },
+    "IBIT": {
+      "first": "2024-01-11",
+      "last": "2026-09-04",
+      "n": 665
+    },
+    "IEF": {
+      "first": "2002-07-30",
+      "last": "2026-09-04",
+      "n": 6065
+    },
+    "IWM": {
+      "first": "2000-05-26",
+      "last": "2026-09-04",
+      "n": 6608
+    },
+    "JNK": {
+      "first": "2007-12-04",
+      "last": "2026-09-04",
+      "n": 4718
+    },
+    "KO": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8458
+    },
+    "KORU": {
+      "first": "2013-04-10",
+      "last": "2026-09-04",
+      "n": 3373
+    },
+    "KRW=X": {
+      "first": "2003-12-01",
+      "last": "2026-09-04",
+      "n": 5904
+    },
+    "LQD": {
+      "first": "2002-07-30",
+      "last": "2026-09-04",
+      "n": 6065
+    },
+    "META": {
+      "first": "2012-05-18",
+      "last": "2026-09-04",
+      "n": 3595
+    },
+    "MSFT": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8458
+    },
+    "MTUM": {
+      "first": "2013-04-18",
+      "last": "2026-09-04",
+      "n": 3367
+    },
+    "NFLX": {
+      "first": "2002-05-23",
+      "last": "2026-09-04",
+      "n": 6111
+    },
+    "NVDA": {
+      "first": "1999-01-22",
+      "last": "2026-09-04",
+      "n": 6948
+    },
+    "NVDU": {
+      "first": "2023-09-13",
+      "last": "2026-09-04",
+      "n": 748
+    },
+    "PHO": {
+      "first": "2005-12-06",
+      "last": "2026-09-04",
+      "n": 5219
+    },
+    "PLTR": {
+      "first": "2020-09-30",
+      "last": "2026-09-04",
+      "n": 1490
+    },
+    "QQQ": {
+      "first": "1999-03-10",
+      "last": "2026-09-04",
+      "n": 6916
+    },
+    "RSP": {
+      "first": "2003-05-01",
+      "last": "2026-09-04",
+      "n": 5875
+    },
+    "SMH": {
+      "first": "2000-06-05",
+      "last": "2026-09-04",
+      "n": 6603
+    },
+    "SOXL": {
+      "first": "2010-03-11",
+      "last": "2026-09-04",
+      "n": 4148
+    },
+    "SOXX": {
+      "first": "2001-07-13",
+      "last": "2026-09-04",
+      "n": 6324
+    },
+    "SPCX": {
+      "first": "2026-06-12",
+      "last": "2026-09-04",
+      "n": 59
+    },
+    "SPHB": {
+      "first": "2011-05-05",
+      "last": "2026-09-04",
+      "n": 3857
+    },
+    "SPLV": {
+      "first": "2011-05-05",
+      "last": "2026-09-04",
+      "n": 3857
+    },
+    "SPXL": {
+      "first": "2008-11-05",
+      "last": "2026-09-04",
+      "n": 4485
+    },
+    "SPY": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8458
+    },
+    "TLT": {
+      "first": "2002-07-30",
+      "last": "2026-09-04",
+      "n": 6065
+    },
+    "TSLA": {
+      "first": "2010-06-29",
+      "last": "2026-09-04",
+      "n": 4072
+    },
+    "UDOW": {
+      "first": "2010-02-11",
+      "last": "2026-09-04",
+      "n": 4167
+    },
+    "URA": {
+      "first": "2010-11-05",
+      "last": "2026-09-04",
+      "n": 3981
+    },
+    "URNM": {
+      "first": "2019-12-04",
+      "last": "2026-09-04",
+      "n": 1697
+    },
+    "UUP": {
+      "first": "2007-03-01",
+      "last": "2026-09-04",
+      "n": 4911
+    },
+    "VLO": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8458
+    },
+    "XLB": {
+      "first": "1998-12-22",
+      "last": "2026-09-04",
+      "n": 6968
+    },
+    "XLE": {
+      "first": "1998-12-22",
+      "last": "2026-09-04",
+      "n": 6968
+    },
+    "XLF": {
+      "first": "1998-12-22",
+      "last": "2026-09-04",
+      "n": 6968
+    },
+    "XLI": {
+      "first": "1998-12-22",
+      "last": "2026-09-04",
+      "n": 6968
+    },
+    "XLK": {
+      "first": "1998-12-22",
+      "last": "2026-09-04",
+      "n": 6968
+    },
+    "XLP": {
+      "first": "1998-12-22",
+      "last": "2026-09-04",
+      "n": 6968
+    },
+    "XLU": {
+      "first": "1998-12-22",
+      "last": "2026-09-04",
+      "n": 6968
+    },
+    "XLV": {
+      "first": "1998-12-22",
+      "last": "2026-09-04",
+      "n": 6968
+    },
+    "XLY": {
+      "first": "1998-12-22",
+      "last": "2026-09-04",
+      "n": 6968
+    },
+    "^FVX": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8437
+    },
+    "^GSPC": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8458
+    },
+    "^IRX": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8437
+    },
+    "^RUT": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8458
+    },
+    "^SOX": {
+      "first": "1994-05-04",
+      "last": "2026-09-04",
+      "n": 8140
+    },
+    "^TNX": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8437
+    },
+    "^TYX": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8437
+    },
+    "^VIX": {
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "n": 8459
+    }
+  },
+  "frames": {
+    "close": {
+      "rows": 9995,
+      "first": "1993-01-29",
+      "last": "2026-09-08",
+      "columns": [
+        "AAL",
+        "AAPL",
+        "AMD",
+        "AMZN",
+        "BLK",
+        "BTC-USD",
+        "CL=F",
+        "DX-Y.NYB",
+        "FAS",
+        "GC=F",
+        "GOOGL",
+        "HG=F",
+        "HYG",
+        "IBIT",
+        "IEF",
+        "IWM",
+        "JNK",
+        "KO",
+        "KORU",
+        "KRW=X",
+        "LQD",
+        "META",
+        "MSFT",
+        "MTUM",
+        "NFLX",
+        "NVDA",
+        "NVDU",
+        "PHO",
+        "PLTR",
+        "QQQ",
+        "RSP",
+        "SMH",
+        "SOXL",
+        "SOXX",
+        "SPCX",
+        "SPHB",
+        "SPLV",
+        "SPXL",
+        "SPY",
+        "TLT",
+        "TSLA",
+        "UDOW",
+        "URA",
+        "URNM",
+        "UUP",
+        "VLO",
+        "XLB",
+        "XLE",
+        "XLF",
+        "XLI",
+        "XLK",
+        "XLP",
+        "XLU",
+        "XLV",
+        "XLY",
+        "^FVX",
+        "^GSPC",
+        "^IRX",
+        "^RUT",
+        "^SOX",
+        "^TNX",
+        "^TYX",
+        "^VIX"
+      ]
+    },
+    "spy_ohlc": {
+      "rows": 8458,
+      "first": "1993-01-29",
+      "last": "2026-09-04",
+      "columns": [
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume"
+      ]
+    },
+    "cboe": {
+      "rows": 9226,
+      "first": "1990-01-02",
+      "last": "2026-09-04",
+      "columns": [
+        "VIX3M",
+        "VIX9D",
+        "VVIX",
+        "SKEW"
+      ]
+    },
+    "fg": {
+      "rows": 1529,
+      "first": "2020-08-03",
+      "last": "2026-09-04",
+      "columns": [
+        "score",
+        "market_momentum_sp500",
+        "market_momentum_sp125",
+        "stock_price_strength",
+        "stock_price_breadth",
+        "put_call_options",
+        "market_volatility_vix",
+        "market_volatility_vix_50",
+        "junk_bond_demand",
+        "safe_haven_demand"
+      ]
+    },
+    "eod": {
+      "rows": 729,
+      "first": "2023-10-09",
+      "last": "2026-09-04",
+      "columns": [
+        "open",
+        "close",
+        "ret",
+        "half_day",
+        "bar_start"
+      ]
+    }
+  },
+  "elapsed_sec": 6.8
+}

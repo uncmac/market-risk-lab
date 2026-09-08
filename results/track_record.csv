@@ -1,0 +1,2 @@
+asof,recorded_at_utc,variant,state_fang,state_macd,state_fg,state_vix,state_ma,state_eod,state_lead,state_btc,score_d,score_w,score_m,overall_d,overall_w,overall_m,tone,spy_close,vix_close,prob_dd5_20,run_id,y_sign_20,y_sign_60,y_dd5_20,fwd_ret_20,fwd_ret_60,tone_faithful,market_status
+2026-09-04,2026-09-07T22:38:21Z,completed,GREEN,R2G,AMBER,GREEN,GREEN,AMBER,GREEN,GREEN,0.676471,0.500000,0.600000,GREEN,GREEN,GREEN,hold,770.190002,14.530000,,daily-20260907T223821Z,,,,,,hold,holiday
