@@ -1057,6 +1057,10 @@ LABELS.update({
     "A": "A", "B": "B", "C": "C", "pooled_bss_clim": "전체 BSS 기후학", "pooled_bss_vix": "전체 BSS VIX",
     "ci_lo_clim": "CI 하한(clim→M, ×1e-4)", "ci_lo_vix": "CI 하한(B1→M, ×1e-4)", "ci_lo_info": "CI 하한(정보 단, ×1e-4)", "info_step": "정보 단", "n_blocks_clim_pos": "블록 >0 (기후학)",
     "n_blocks_vix_nonneg": "블록 ≥0 (VIX)", "min_pass_blocks": "필요 블록 수", "min_block_bss_clim": "최소 블록 BSS 기후학", "n_blocks_empty": "빈 블록",
+    "min_block_clim": "최소 블록(기후학)", "table": "블록 표", "required": "판정에 사용", "passing_rungs": "통과 단",
+    "require_tables": "요구 표", "primary_table": "주 표", "blocking_tables": "막은 표", "verdict_line": "배치 판정",
+    "alone_tone": "이 표 단독 톤 모델", "alone_deploy": "이 표 단독 결론", "candidate": "사전 후보 단",
+    "literal_tone_model": "literal 톤 모델 후보(주 표)", "amended_tone_model": "amended 톤 모델 후보(주 표)",
     "avg_exposure": "평균 비중", "cost_total": "누적 비용", "ann_vol": "변동성(연)", "max_dd_date": "MaxDD 일자", "worst_month_label": "최악 월",
     "bh_cagr": "보유 CAGR", "bh_max_dd": "보유 MaxDD", "bh_worst_month": "보유 최악 월", "bh_total_return": "보유 총수익", "bh_ann_vol": "보유 변동성",
     "n_scored": "채점 행", "ci_bss_clim": "BSS 기후학 95% 구간", "episodes5_observed": "실현 ≥5% 에피소드",
@@ -1440,6 +1444,50 @@ def _coef_txt(model: dict) -> str:
     return txt
 
 
+TABLE_KO_P2 = {"24": "24개월", "18": "18개월", "1999": "1999 시작"}     # 블록 표 이름 → 사람이 읽는 이름
+
+
+def _table_ko_p2(name) -> str:
+    return TABLE_KO_P2.get(str(name), f"{name} 블록")
+
+
+def acceptance_verdict_line(acc: dict) -> str:
+    """배치 판정 한 줄 — calibrate.acceptance 의 verdict_line 을 **그대로** 쓴다(리포트가 판정을 다시 쓰지 않는다).
+    예: "24개월 표: M1 통과 · 18개월 표: 실패(최소 블록 BSS_clim −0.0996) → 두 표 모두 통과 요구(소유자 결정 2026-09-08)
+         → 배치 없음(정보 제공 전용)". verdict_line 이 없는 예전 산출물이면 rationale 로 내려간다."""
+    if not isinstance(acc, dict) or not acc:
+        return ""
+    txt = acc.get("verdict_line") or acc.get("rationale")
+    return str(txt) if txt else ""
+
+
+def _acceptance_tables(acc: dict) -> dict:
+    """{표: {"literal": ..., "amended": ..., "required": bool, ...}} — 새 산출물은 acc["tables"], 예전 산출물은 평면 형식."""
+    tabs = acc.get("tables") if isinstance(acc.get("tables"), dict) else None
+    req = [str(t) for t in (acc.get("require_tables") or [])]
+    if tabs and all(isinstance(v, dict) for v in tabs.values()):
+        return {str(t): {**v, "required": bool(str(t) in req) if req else True} for t, v in tabs.items()}
+    primary = str(acc.get("primary_table") or (req[0] if req else "24"))
+    return {primary: {"literal": acc.get("literal"), "amended": acc.get("amended"), "required": True,
+                      "tone_model": acc.get("tone_model"), "deploy_mode": acc.get("deploy_mode")}}
+
+
+def _acceptance_tags(acc: dict) -> list[str]:
+    """머리 태그: 요구 표별 판정 + 교집합 결론. 배치가 없으면 어느 표도 '통과' 로 보이지 않게 한다."""
+    if not isinstance(acc, dict) or not acc:
+        return []
+    req = [str(t) for t in (acc.get("require_tables") or [])]
+    per = acc.get("per_table") if isinstance(acc.get("per_table"), dict) else {}
+    tags = []
+    for t in req:
+        tm = (per.get(t) or {}).get("tone_model")
+        tags.append(f'<span class="tag{"" if tm else " warn"}">{_esc(_table_ko_p2(t))} 표 '
+                    f'<b>{_esc(str(tm) + " 통과" if tm else "실패")}</b></span>')
+    if len(req) > 1:
+        tags.append(f'<span class="tag warn">{_esc(f"{len(req)}개 표 모두 통과 요구")}</span>')
+    return tags
+
+
 def _honesty_strip(d: dict, model: dict, lo: float, hi: float, src: str) -> str:
     """정직 스트립: 배포 모델의 model_id·계수·clim·밴드, 생산 모델 M3(정보), #2 §6 판정(literal/amended), 홀드아웃,
     Phase 3 킬룰 카운트다운, 라이브 Brier, 각주."""
@@ -1473,17 +1521,26 @@ def _honesty_strip(d: dict, model: dict, lo: float, hi: float, src: str) -> str:
         lit_txt = "통과" if lit else ("실패" if lit is not None else "—")
         lit_blk = acc.get("literal", {}).get(cand) if isinstance(acc.get("literal"), dict) else None
         fb = lit_blk.get("failing_blocks") if isinstance(lit_blk, dict) else None
-        items.append(f"실험 #2 §6 판정 — literal({cand}): {lit_txt}" + (f" (실패 블록 {fb})" if fb else "")
+        prim = str(acc.get("primary_table") or "24")
+        items.append(f"실험 #2 §6 판정({_table_ko_p2(prim)} 표) — literal({cand}): {lit_txt}" + (f" (실패 블록 {fb})" if fb else "")
                      + f" · amended(#2a, post hoc, {amd_rung}): {'통과' if amd else ('실패' if amd is not None else '—')}"
                      + (f" (사전 후보 {cand} 는 실패)" if amd_rung != cand and _pass_of(amd_blk, cand) is False else "")
-                     + (f", 톤 모델 후보 {amd_tone}" if amd_tone else "")
-                     + f" → 적용 규칙 {acc.get('rule') or '—'}, deploy {acc.get('deploy_mode') or d.get('deploy_mode') or '—'}"
-                     + (f", tone_model {acc.get('tone_model')}" if acc.get("tone_model") else ""))
-        sens = acc.get("sensitivity_blocks")
-        if isinstance(sens, dict) and sens and not sens.get("agrees", True):
-            items.append(f"블록 민감도(§8.2): 같은 규칙을 {sens.get('blocks') or '—'}개월 블록 표로 재채점하면 "
-                         f"deploy {sens.get('deploy_mode') or '—'} · 톤 모델 {sens.get('tone_model') or '없음'}"
-                         " — 배치 판정은 블록 정의에 의존한다")
+                     + (f", 이 표만 보면 톤 모델 후보 {amd_tone}" if amd_tone else "")
+                     + f" → 적용 규칙 {acc.get('rule') or '—'}")
+        verdict = acceptance_verdict_line(acc)
+        deploy_txt = acc.get("deploy_mode") or d.get("deploy_mode") or "—"
+        req_txt = "+".join(str(t) for t in (acc.get("require_tables") or []))
+        head_txt = "배치 판정" + (f"(요구 표 {req_txt})" if req_txt else "")
+        items.append(f"{head_txt} — {verdict}" if verdict else f"{head_txt} — deploy {deploy_txt}")
+        items.append(f"deploy {deploy_txt}"
+                     + (f" · tone_model {acc.get('tone_model')}" if acc.get("tone_model") else " · 배포된 단 없음 — 톤·비중 주장 없음")
+                     + (f" · {acc.get('conjunction_note')}" if acc.get("conjunction_note") else ""))
+        sens_all = acc.get("sensitivity_blocks") if isinstance(acc.get("sensitivity_blocks"), dict) else {}
+        for t, sens in sens_all.items():
+            if isinstance(sens, dict) and not sens.get("agrees", True):
+                items.append(f"블록 민감도(§8.2): 같은 규칙을 {_table_ko_p2(t)} 블록 표로 재채점하면 "
+                             f"deploy {sens.get('deploy_mode') or '—'} · 톤 모델 {sens.get('tone_model') or '없음'}"
+                             " — 배치 판정은 블록 정의에 의존한다(이 표는 배치 판정에 쓰지 않는다)")
     else:
         items.append(f"실험 #2 §6 판정 — deploy {d.get('deploy_mode') or model.get('deploy_mode') or '—'} (summary_p2.json:acceptance 참조)")
     ho = d.get("holdout")
@@ -1672,6 +1729,8 @@ def p2_card(today_p2: dict) -> str:
     state_bits = [f"r = {r:.2f} (= {rung} 확률 ÷ 기저율)" if not math.isnan(r) else "r = — (확률 계산 불가)",
                   f"체류 {_fmt(days, 'days')}세션" if days is not None else "체류 —"]
     reason = d.get("reason_ko")
+    # 배치 판정 한 줄(교집합) — 카드가 배포 여부를 스스로 말한다. 출처는 summary_p2.json.acceptance 하나뿐.
+    acc_line = acceptance_verdict_line(d.get("acceptance") if isinstance(d.get("acceptance"), dict) else {})
     if state is None:
         s3 = '<h3>상태</h3><div class="note">상태 자료 없음</div>'
     elif tones_on:
@@ -1679,14 +1738,16 @@ def p2_card(today_p2: dict) -> str:
         s3 = (f'<h3>상태 · 톤</h3><div>{_p2_state_pill(state)} {_tone_pill(tone) if tone else ""}'
               + (f' <span class="mut">주식 비중 {int(round(exp_ * 100))}%</span>' if exp_ is not None else "")
               + f'</div><div class="note">{_esc(" · ".join(state_bits))}' + (f" · {_esc(reason)}" if reason else "") + "</div>"
-              + (f'<div class="note">{_esc(" · ".join(thr_txt))}</div>' if thr_txt else ""))
+              + (f'<div class="note">{_esc(" · ".join(thr_txt))}</div>' if thr_txt else "")
+              + (f'<div class="note">{_esc(acc_line)}</div>' if acc_line else ""))
     else:
         s3 = (f'<h3>상태 (시험 운용)</h3><div class="info">{_p2_state_pill(state, grey=True)} '
               f'<span class="tag warn">{_esc(INFO_ONLY_LABEL)}</span> <span class="tag warn">{_esc(INFO_DISPLAY_LABEL)}</span>'
               f'<div class="note">{_esc(" · ".join(state_bits))}' + (f" · {_esc(reason)}" if reason else "") + "</div>"
               + (f'<div class="note">{_esc(" · ".join(thr_txt))}</div>' if thr_txt else "")
               + f'<div class="note">§6 채택 규칙을 통과하기 전이라 배포된 단이 없습니다 — {_esc(_rung_txt(rung))} 확률과 상태는 '
-                '정보로만 보여주고 톤·비중은 주장하지 않습니다(비중은 v0 판정을 따릅니다).</div></div>')
+                '정보로만 보여주고 톤·비중은 주장하지 않습니다(비중은 v0 판정을 따릅니다).</div>'
+              + (f'<div class="note">{_esc(acc_line)}</div>' if acc_line else "") + "</div>")
     if d.get("churn_alert"):
         s3 += f'<div class="tag bad">{_esc(P2_CHURN_LABEL)} — 직전 252세션 변경 &gt; {DECISION_P2["churn_alert"]} (장부 §8 검토 대상, 자동 재조정 없음)</div>'
 
@@ -1742,33 +1803,58 @@ def p2_card(today_p2: dict) -> str:
 # 주간 리포트 — 보정 (docs/calibration_p2.html)
 # ------------------------------------------------------------------
 def _acceptance_box(acc: dict) -> str:
-    """§6 literal / #2a amended 판정 상자 (deploy_mode·tone_model 포함)."""
+    """§6 literal / #2a amended 판정 상자 — **요구 표 전부의 교집합**(장부 #2d)을 표별로 펼쳐 보인다."""
     if not isinstance(acc, dict) or not acc:
         return '<div class="note">acceptance 결과 없음</div>'
     dm = acc.get("deploy_mode") or "—"
     ok = dm == "tones"
     color = "#22c55e" if ok else "#eab308"
+    req = [str(t) for t in (acc.get("require_tables") or [])]
+    per = acc.get("per_table") if isinstance(acc.get("per_table"), dict) else {}
     head = (f'<div class="acc" style="border-color:{color}"><div class="verdict" style="color:{color};font-size:18px">'
             f'{"톤 적용(tones)" if ok else "정보 제공 전용(info_only)"} — 규칙 {_esc(acc.get("rule") or "—")}'
-            + (f' · 톤 모델 {_esc(acc.get("tone_model"))}' if acc.get("tone_model") else "") + "</div>"
-            + (f'<div class="note">{_esc(acc.get("rationale"))}</div>' if acc.get("rationale") else "")
-            + (f'<div class="note">{_esc(acc.get("post_hoc_note"))}</div>' if acc.get("post_hoc_note") else ""))
+            + (f' · 판정 표 {_esc(" + ".join(_table_ko_p2(t) for t in req))}' if req else "")
+            + (f' · 톤 모델 {_esc(acc.get("tone_model"))}' if acc.get("tone_model") else " · 배포된 단 없음") + "</div>")
+    verdict = acceptance_verdict_line(acc)
+    if verdict:
+        head += f'<div class="note" style="color:{color}"><b>배치 판정</b>: {_esc(verdict)}</div>'
+    if req:
+        rows = [{"table": _table_ko_p2(t), "required": bool((per.get(t) or {}).get("required", True)),
+                 "alone_tone": (per.get(t) or {}).get("tone_model"), "alone_deploy": (per.get(t) or {}).get("deploy_mode"),
+                 "passing_rungs": ", ".join((per.get(t) or {}).get("passing_rungs") or []) or "없음",
+                 "n_blocks": (per.get(t) or {}).get("n_blocks"), "min_pass_blocks": (per.get(t) or {}).get("min_pass_blocks")}
+                for t in req]
+        head += ("<h3>표별 판정 (배치는 이 표들의 교집합)</h3>"
+                 '<div class="note">아래 두 열은 <b>그 표 하나만 봤을 때</b>의 결론이다 — 실제 배치는 위의 배치 판정 한 줄이다.</div>'
+                 + _p2_table(rows))
+    if acc.get("blocking_tables"):
+        head += ('<div class="note" style="color:#eab308"><b>배치를 막은 표</b>: '
+                 + _esc(", ".join(_table_ko_p2(t) for t in acc["blocking_tables"])) + "</div>")
+    for key in ("conjunction_note", "rationale", "post_hoc_note"):
+        if acc.get(key):
+            head += f'<div class="note">{_esc(acc.get(key))}</div>'
     parts = []
-    for name, title in (("literal", "§6 문자 그대로 (사전 등록)"), ("amended", "#2a 완화안 (post hoc)")):
-        blk = acc.get(name)
-        if isinstance(blk, dict) and blk and all(isinstance(v, dict) for v in blk.values()):
-            recs = [{"rung": k, **{kk: vv for kk, vv in v.items() if kk != "rule_text"}} for k, v in blk.items()]
-            rule_text = next((v.get("rule_text") for v in blk.values() if isinstance(v, dict) and v.get("rule_text")), None)
-            parts.append(f"<h3>{_esc(title)}</h3>" + (f'<div class="note">{_esc(rule_text)}</div>' if rule_text else "") + _p2_table(recs))
-        elif isinstance(blk, dict) and blk:
-            parts.append(f"<h3>{_esc(title)}</h3>" + _p2_kv({k: v for k, v in blk.items() if k != "rule_text"})
-                         + (f'<div class="note">{_esc(blk.get("rule_text"))}</div>' if blk.get("rule_text") else ""))
-    sens = acc.get("sensitivity_blocks")
-    if isinstance(sens, dict) and sens and not sens.get("agrees", True):
-        head += ('<div class="note" style="color:#eab308"><b>블록 민감도(§8.2)</b>: 같은 규칙을 '
-                 f'{_esc(str(sens.get("blocks") or "—"))}개월 블록 표로 재채점하면 deploy <b>{_esc(str(sens.get("deploy_mode") or "—"))}</b>'
-                 f' · 톤 모델 {_esc(str(sens.get("tone_model") or "없음"))} — 배치 판정은 블록 정의에 의존한다(사다리 CI 는 동일).</div>')
-    extra = {k: v for k, v in acc.items() if k in ("candidate", "literal_tone_model", "amended_tone_model", "n_blocks", "min_pass_blocks")}
+    for tname, tbl in _acceptance_tables(acc).items():
+        label = f"{_table_ko_p2(tname)} 블록 표" + ("" if tbl.get("required", True) else " (민감도 — 배치 판정에 쓰지 않음)")
+        for name, title in (("literal", "§6 문자 그대로 (사전 등록)"), ("amended", "#2a 완화안 (post hoc)")):
+            blk = tbl.get(name)
+            if isinstance(blk, dict) and blk and all(isinstance(v, dict) for v in blk.values()):
+                recs = [{"rung": k, **{kk: vv for kk, vv in v.items() if kk != "rule_text"}} for k, v in blk.items()]
+                rule_text = next((v.get("rule_text") for v in blk.values() if isinstance(v, dict) and v.get("rule_text")), None)
+                parts.append(f"<h3>{_esc(label)} — {_esc(title)}</h3>"
+                             + (f'<div class="note">{_esc(rule_text)}</div>' if rule_text else "") + _p2_table(recs))
+            elif isinstance(blk, dict) and blk:
+                parts.append(f"<h3>{_esc(label)} — {_esc(title)}</h3>" + _p2_kv({k: v for k, v in blk.items() if k != "rule_text"})
+                             + (f'<div class="note">{_esc(blk.get("rule_text"))}</div>' if blk.get("rule_text") else ""))
+    sens_all = acc.get("sensitivity_blocks") if isinstance(acc.get("sensitivity_blocks"), dict) else {}
+    for t, sens in sens_all.items():
+        if isinstance(sens, dict) and not sens.get("agrees", True):
+            head += ('<div class="note" style="color:#eab308"><b>블록 민감도(§8.2)</b>: 같은 규칙을 '
+                     f'{_esc(_table_ko_p2(t))} 블록 표로 재채점하면 deploy <b>{_esc(str(sens.get("deploy_mode") or "—"))}</b>'
+                     f' · 톤 모델 {_esc(str(sens.get("tone_model") or "없음"))} — 배치 판정은 블록 정의에 의존한다'
+                     "(이 표는 배치 판정에 쓰지 않는다).</div>")
+    extra = {k: v for k, v in acc.items() if k in ("candidate", "primary_table", "literal_tone_model", "amended_tone_model",
+                                                   "n_blocks", "min_pass_blocks")}
     return head + "".join(parts) + (_p2_kv(extra) if extra else "") + "</div>"
 
 
@@ -1797,9 +1883,13 @@ def render_calibration_report(summary_p2: dict, out_html: Path, charts: dict[str
     tags = [f'<span class="tag">OOS <b>{_esc(first_refit)} ~ {_esc(end)}</b></span>',
             f'<span class="tag">spec <b class="mono">{_esc(str(sha)[:12])}</b></span>',
             f'<span class="tag">생성 <b>{_esc(run.get("generated_at_utc") or s.get("generated_at") or _now_str())}</b></span>',
-            f'<span class="tag{"" if acc.get("deploy_mode") == "tones" else " warn"}">deploy <b>{_esc(acc.get("deploy_mode") or "—")}</b></span>']
-    if isinstance(acc.get("sensitivity_blocks"), dict) and not acc["sensitivity_blocks"].get("agrees", True):
-        tags.append('<span class="tag warn">블록 민감도 불일치</span>')
+            f'<span class="tag{"" if acc.get("deploy_mode") == "tones" else " warn"}">deploy <b>{_esc(acc.get("deploy_mode") or "—")}</b>'
+            + (f' · 톤 모델 {_esc(acc.get("tone_model"))}' if acc.get("tone_model") else " · 배포된 단 없음") + "</span>"]
+    tags += _acceptance_tags(acc)
+    _sens_acc = acc.get("sensitivity_blocks") if isinstance(acc.get("sensitivity_blocks"), dict) else {}
+    for _t, _s in _sens_acc.items():
+        if isinstance(_s, dict) and not _s.get("agrees", True):
+            tags.append(f'<span class="tag warn">{_esc(_table_ko_p2(_t))} 블록 민감도 불일치</span>')
     if holdout:
         tags.append('<span class="tag bad">홀드아웃 해제됨(1회)</span>')
     else:
@@ -1809,7 +1899,9 @@ def render_calibration_report(summary_p2: dict, out_html: Path, charts: dict[str
     disclosure = s.get("disclosure") or "#2 사전 관측 참조"
     head = ('<header><div class="eyebrow">market-risk-lab · Phase 2 · 실험 #2 (보정 모델 p2)</div>'
             '<h1>보정 확률 walk-forward 채점 — 사다리 M0→M3, 기후학·VIX 대비 Brier skill</h1>'
-            '<div class="sub">4-파라미터 로지스틱(x_vix·x_har·x_ma), 1월 첫 거래일 연 1회 재적합, 20거래일 퍼지, 24개월 블록. 모든 표본 수는 n/20 독립 창을 병기합니다.</div>'
+            '<div class="sub">4-파라미터 로지스틱(x_vix·x_har·x_ma), 1월 첫 거래일 연 1회 재적합, 20거래일 퍼지. '
+            'VALIDATION §6 이 블록을 "18~24개월" 로 사전 등록했으므로 배치 판정은 24개월 표와 18개월 표 <b>모두</b>에서 통과해야 합니다'
+            '(소유자 결정 2026-09-08, 장부 #2d). 모든 표본 수는 n/20 독립 창을 병기합니다.</div>'
             f'<div class="tags">{"".join(tags)}</div><div class="note">공개: {_esc(disclosure)} — 2003~2024-08 OOS 기록은 설계 단계에서 이미 관측됨(§13 #2). 이후 규칙 변경은 post hoc.</div></header>')
     sec_titles = ["① v0 요약(영구)", "② 사다리", "③ 블록·§6 판정", "④ 신뢰도·Murphy", "⑤ 계수 경로", "⑥ 시대별 AUC", "⑦ 소거·참조선", "⑧ HAR-RV", "⑨ 데이터·경고·정직"]
     nav = '<nav class="nav">' + "".join(f'<a href="#s{i + 1}">{_esc(t)}</a>' for i, t in enumerate(sec_titles)) + "</nav>"
@@ -1849,12 +1941,15 @@ def render_calibration_report(summary_p2: dict, out_html: Path, charts: dict[str
     b18 = _to_records((s.get("blocks18_by_rung") or {}).get(dep3)) or _to_records(s.get("blocks18"))
     b18_rung = dep3 if _to_records((s.get("blocks18_by_rung") or {}).get(dep3)) else "M3"
     b99 = _to_records(s.get("blocks_from1999") or s.get("blocks24_from_1999") or s.get("blocks1999"))
-    s3 = ('<section class="panel" id="s3"><h2>③ 블록 표 (24개월 주 · 18개월 · 1999 시작 민감도) 와 §6 판정</h2>'
+    _req3 = [str(t) for t in (acc.get("require_tables") or [])]
+    _b24_role = "판정" if "24" in _req3 else ("민감도" if _req3 else "주")     # require_tables 가 없는 예전 산출물은 옛 라벨 그대로
+    _b18_role = "판정" if "18" in _req3 else "민감도"
+    s3 = ('<section class="panel" id="s3"><h2>③ 블록 표 (24개월 · 18개월 · 1999 시작) 와 §6 판정</h2>'
           f'<div class="note">{_esc(P2_HONESTY_ITEMS[0])}</div>'
           + _acceptance_box(acc)
           + _img(charts.pop("block_skill", None), "블록별 Brier skill — 4 벤치마크(기후학·VIX B1·BGK·M1). 0 아래가 실패 블록.", "Block skill bars")
-          + "<h3>24개월 블록(주, M3 생산 모델)</h3>" + _p2_table(b24, _BLOCK_ORDER, "blocks24 없음")
-          + f"<h3>18개월 블록(민감도, {_esc(b18_rung)})</h3>" + _p2_table(b18, _BLOCK_ORDER, "blocks18 없음")
+          + f"<h3>24개월 블록({_esc(_b24_role)}, M3 생산 모델)</h3>" + _p2_table(b24, _BLOCK_ORDER, "blocks24 없음")
+          + f"<h3>18개월 블록({_esc(_b18_role)}, {_esc(b18_rung)})</h3>" + _p2_table(b18, _BLOCK_ORDER, "blocks18 없음")
           + "<h3>1999 시작(민감도, 2000~02 약세장을 OOS 로 · M3)</h3>" + _p2_table(b99, _BLOCK_ORDER, "blocks_from1999 없음")
           + (("<h3>홀드아웃(2024-09-03~, 1회 검증)</h3>" + _p2_kv(holdout)) if holdout else "")
           + "</section>")

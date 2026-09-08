@@ -36,6 +36,9 @@
   * 조용한 실패 금지: v0 참조선만 조건 미충족 시 생략(+경고)하고, 그 밖의 단계는 예외로 죽는다. 모든 표에 n_blocks(=n//20) 병기.
   * --acceptance-rule 은 §13 #2a 의 소유자 선택 (a) literal / (b) amended 를 기록하는 스위치다(기본 literal = 사전 등록).
     amended 로 바꾸는 것은 post hoc 이며 장부 #2a 기재가 필요하다 — run.acceptance_rule 에 남는다.
+  * --acceptance-blocks 는 판정을 요구할 블록 표다(24 / 18 / both, 기본 both). VALIDATION §6 이 블록을 "18~24개월" 로
+    사전 등록했고 두 표가 어긋났으므로, 소유자 결정 2026-09-08(장부 #2d)에 따라 **두 표 모두** 통과해야 배치한다.
+    요구하지 않은 표(예: 1999 시작)는 acceptance.sensitivity_blocks 로 계속 공개한다 — run.acceptance_blocks 에 남는다.
 종료 코드: 0 성공 · 1 실패(예외·결정론 검사 실패·홀드아웃 침범) · 2 홀드아웃 unlock 파일이 이미 존재(--holdout-final 재실행 거부).
 """
 from __future__ import annotations
@@ -90,6 +93,8 @@ C_SENSITIVITY = (0.1, 10.0)                        # C 민감도 (기본 1.0 은
 EXIT_UNLOCK_EXISTS = 2
 DISCLOSURE = "#2 사전 관측 참조"
 PRIMARY_RUNGS = ("M1", "M2", "M3")
+# --acceptance-blocks → acceptance(require_tables=...). both = 두 사전 등록 표 모두 통과해야 배치 (소유자 결정 2026-09-08, 장부 #2d).
+ACCEPTANCE_BLOCK_SETS = {"24": ("24",), "18": ("18",), "both": C.DEFAULT_REQUIRE_TABLES}
 ABLATION_LADDER = {"M3-PK": ("x_vix", "x_har_pk", "x_ma"), "M3-HAR96": tuple(P2["features"])}
 SCORE_KEYS = ("n", "n_blocks", "n_pos", "base", "mean_p", "brier", "brier_clim", "brier_vix", "brier_vix_bgk", "brier_m1",
               "bss_clim", "bss_vix", "bss_vix_bgk", "bss_m1", "auc", "calib_in_large")
@@ -328,7 +333,7 @@ def run_ladder(inp: dict, first_refit: str, wf_end: str, sha: str, rule: str, wa
 # ------------------------------------------------------------------
 # 채점
 # ------------------------------------------------------------------
-def score_ladder(lad: dict, primary_blocks, warns: list[str]) -> dict:
+def score_ladder(lad: dict, ladder_blocks, warns: list[str]) -> dict:
     """블록 표(24·18·1999) · 사다리 표 · 신뢰도 · Murphy · 소거/민감도 요약."""
     oos = lad["oos"]
     t0 = time.perf_counter()
@@ -337,7 +342,7 @@ def score_ladder(lad: dict, primary_blocks, warns: list[str]) -> dict:
         bs24 = {r: C.block_scores(oos, BLOCKS_24, C.rung_col(r)) for r in PRIMARY_RUNGS}
         bs18 = {r: C.block_scores(oos, BLOCKS_18, C.rung_col(r)) for r in PRIMARY_RUNGS}
         rungs = C.rung_table(oos, ("M0", "M1", "M2", "M3"))
-        ladder = C.ladder_table(oos, primary_blocks)
+        ladder = C.ladder_table(oos, ladder_blocks)
         rel = C.reliability_table(oos["p_m3"], oos["y"])
         mur = C.murphy_decomposition(oos["p_m3"], oos["y"])
         rel_m1 = C.reliability_table(oos["p_m1"], oos["y"])
@@ -369,14 +374,17 @@ def score_ladder(lad: dict, primary_blocks, warns: list[str]) -> dict:
     csens_detail["1"] = {"blocks": _block_stats(bs24["M3"]), "params": [p for p in lad["params"] if p["rung"] == "M3"]}
     csens = {k: csens[k] for k in sorted(csens, key=float)}
     csens_detail = {k: csens_detail[k] for k in sorted(csens_detail, key=float)}
-    bs99 = None
+    bs99, ladder99 = None, None
     if lad["sens99"] is not None:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             bs99 = {r: C.block_scores(lad["sens99"]["oos"], BLOCKS_24_FROM_1999, C.rung_col(r)) for r in PRIMARY_RUNGS}
+            # 1999 표를 acceptance(민감도)로 채점하려면 그 표의 사다리 CI 가 필요하다 — 주 사다리를 조용히 빌려 쓰지 않는다.
+            ladder99 = C.ladder_table(lad["sens99"]["oos"], BLOCKS_24_FROM_1999)
         warns += [f"1999 민감도 채점: {m}" for m in _messages(caught) if "OOS 세션이 없습니다" not in m]
     _log(f"[score] 블록 24/18/1999 · 사다리 {len(ladder)}행 · 신뢰도 · 소거 · {time.perf_counter() - t0:.1f}s")
-    return {"bs24": bs24, "bs18": bs18, "bs99": bs99, "rungs": rungs, "ladder": ladder, "reliability": rel, "reliability_m1": rel_m1,
+    return {"bs24": bs24, "bs18": bs18, "bs99": bs99, "ladder99": ladder99,
+            "rungs": rungs, "ladder": ladder, "reliability": rel, "reliability_m1": rel_m1,
             "murphy": mur, "murphy_m1": mur_m1, "ablations": abl, "ablation_detail": abl_detail, "c_sensitivity": csens, "c_sensitivity_detail": csens_detail,
             "score_runtime_sec": round(time.perf_counter() - t0, 1)}
 
@@ -726,8 +734,14 @@ def build_headline(oos: pd.DataFrame, sc: dict, acc: dict, first_refit: str) -> 
         "acceptance": {"rule": acc["rule"], "literal_pass": acc["literal"]["M3"]["pass"], "literal_failing_blocks": acc["literal"]["M3"]["failing_blocks"],
                        "amended_pass_M3": acc["amended"]["M3"]["pass"], "amended_tone_model": acc["amended_tone_model"],
                        "deploy_mode": acc["deploy_mode"], "tone_model": acc["tone_model"],
-                       "sensitivity_blocks": {k: v for k, v in (acc.get("sensitivity_blocks") or {}).items()
-                                              if k not in ("literal", "amended")}},
+                       "require_tables": list(acc["require_tables"]), "blocking_tables": list(acc.get("blocking_tables") or []),
+                       "verdict_line": acc.get("verdict_line"),
+                       "per_table": {t: {"tone_model": v.get("tone_model"), "deploy_mode": v.get("deploy_mode"),
+                                         "passing_rungs": list(v.get("passing_rungs") or []), "required": bool(v.get("required")),
+                                         "n_blocks": v.get("n_blocks"), "min_pass_blocks": v.get("min_pass_blocks")}
+                                     for t, v in (acc.get("per_table") or {}).items()},
+                       "sensitivity_blocks": {t: {k: v for k, v in (s or {}).items() if k not in ("literal", "amended")}
+                                              for t, s in (acc.get("sensitivity_blocks") or {}).items()}},
     }
 
 
@@ -752,13 +766,18 @@ def headline_text(h: dict, sc: dict, acc: dict, det: dict) -> str:
             lines.append(f"  단 {step}: 손실차 {s['mean'] * 1e4:+.1f}×1e-4 [{s['lo'] * 1e4:+.1f}, {s['hi'] * 1e4:+.1f}] · DM t {s['dm_t']:+.2f} (p {s['dm_p']:.3f}) · "
                          f"위상 >0 {s['phase_share_pos'] * 100:.0f}%")
     a = h["acceptance"]
-    lines.append(f"  §6 literal(M3): {'통과' if a['literal_pass'] else '실패'} (실패 블록 {a['literal_failing_blocks']}) · "
-                 f"amended(#2a, post hoc) M3 {'통과' if a['amended_pass_M3'] else '실패'}, 톤 모델 후보 {a['amended_tone_model']} → "
-                 f"적용 규칙 {a['rule']} · deploy {a['deploy_mode']} · tone_model {a['tone_model']}")
-    sens = a.get("sensitivity_blocks") or {}
-    if sens:
-        lines.append(f"  §8.2 블록 민감도({sens.get('blocks')}개월): deploy {sens.get('deploy_mode')} · 톤 모델 {sens.get('tone_model') or '없음'} → "
-                     + ("주 표와 일치" if sens.get("agrees") else "주 표와 불일치 — 배치 판정이 블록 정의에 의존한다"))
+    lines.append(f"  §6 literal(M3, 주 표 {acc.get('primary_table')}): {'통과' if a['literal_pass'] else '실패'} (실패 블록 {a['literal_failing_blocks']}) · "
+                 f"amended(#2a, post hoc) M3 {'통과' if a['amended_pass_M3'] else '실패'}, 톤 모델 후보 {a['amended_tone_model']} → 적용 규칙 {a['rule']}")
+    for t in a.get("require_tables") or []:
+        pt = (a.get("per_table") or {}).get(t) or {}
+        lines.append(f"  판정 표 {t}: 톤 모델 {pt.get('tone_model') or '없음'} · deploy {pt.get('deploy_mode')} · "
+                     f"통과 단 {pt.get('passing_rungs') or []} (블록 {pt.get('n_blocks')}개, 필요 {pt.get('min_pass_blocks')})")
+    lines.append(f"  결론(교집합, 요구 표 {a.get('require_tables')}): deploy {a['deploy_mode']} · tone_model {a['tone_model'] or 'None'}"
+                 + (f" · 막은 표 {a.get('blocking_tables')}" if a.get("blocking_tables") else ""))
+    lines.append(f"  {acc.get('verdict_line') or ''}")
+    for t, sens in (a.get("sensitivity_blocks") or {}).items():
+        lines.append(f"  §8.2 블록 민감도({t}, 판정 밖): deploy {sens.get('deploy_mode')} · 톤 모델 {sens.get('tone_model') or '없음'} → "
+                     + ("결론과 일치" if sens.get("agrees") else "결론과 불일치 — 배치 판정이 블록 정의에 의존한다"))
     lines.append(f"  결정론: {det.get('status')} — {det.get('note')}")
     return "\n".join(lines)
 
@@ -771,11 +790,14 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Phase 2 보정 모델 p2 — walk-forward 사다리·검정·HAR-RV (실험 #2)")
     ap.add_argument("--end", default=None, help=f"하드컷 끝 세션 (기본: {HOLDOUT_START} 직전 세션). 홀드아웃 이후 값은 거부")
     ap.add_argument("--first-refit", default=P2["first_refit"], choices=[P2["first_refit"], P2["first_refit_sensitivity"]])
-    ap.add_argument("--blocks", default="24", choices=["24", "18"], help="§6 판정에 쓰는 주 블록 표 (기본 24개월)")
+    ap.add_argument("--blocks", default="24", choices=["24", "18"],
+                    help="사다리 표의 블록별 행을 자를 블록 표 (기본 24개월). §6 배치 판정 표는 --acceptance-blocks 다")
     ap.add_argument("--har-train-start", default="1993-03-03", choices=["1993-03-03", P2["har_train_start_sensitivity"]])
     ap.add_argument("--holdout-final", action="store_true", help="홀드아웃 최종 검증 1회 (unlock 파일이 있으면 exit 2)")
     ap.add_argument("--acceptance-rule", default="literal", choices=["literal", "amended"],
                     help="§13 #2a 소유자 선택: (a) literal(기본·사전 등록) / (b) amended(post hoc, 장부 기재 필요)")
+    ap.add_argument("--acceptance-blocks", default="both", choices=["24", "18", "both"],
+                    help="배치 판정을 요구할 블록 표 (기본 both = 두 표 모두 통과해야 배치 — 소유자 결정 2026-09-08, 장부 #2d)")
     ap.add_argument("--data-dir", default=str(DATA_DIR))
     ap.add_argument("--results-dir", default=str(RESULTS_DIR))
     ap.add_argument("--docs-dir", default=str(DOCS_DIR))
@@ -825,34 +847,42 @@ def main(argv: list[str] | None = None) -> int:
     elif not ok:
         warns.append(f"첫 재적합 {args.first_refit} 는 사전 등록 규칙 미충족(민감도 실행): {rule_info['n_rows']}행·에피소드 {rule_info['n_episodes']}")
     wf_end = wf_end_of(end)
-    primary_blocks = BLOCKS_24 if args.blocks == "24" else BLOCKS_18
+    ladder_blocks = BLOCKS_24 if args.blocks == "24" else BLOCKS_18
 
     # 3) 사다리·소거·민감도 → 채점
     lad = run_ladder(inp, args.first_refit, wf_end, sha, rule, warns)
     oos = lad["oos"]
-    sc = score_ladder(lad, primary_blocks, warns)
+    sc = score_ladder(lad, ladder_blocks, warns)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         era = C.era_auc(feats, oos, P2["eras"], y=y)
-        bs_key, alt_key = ("bs24", "bs18") if args.blocks == "24" else ("bs18", "bs24")
-        acc = C.acceptance({r: sc[bs_key][r] for r in PRIMARY_RUNGS}, sc["ladder"], rule=args.acceptance_rule)
-        # §8.2 블록 민감도: 같은 구간을 다르게 타일링한 표로 같은 규칙을 재채점한다.
-        # 두 표는 [2003-01-01, HOLDOUT_START) 를 정확히 타일링하므로 사다리의 "all" 행(합집합)은 동일 — sc["ladder"] 를 그대로 쓴다.
-        acc_alt = C.acceptance({r: sc[alt_key][r] for r in PRIMARY_RUNGS}, sc["ladder"], rule=args.acceptance_rule)
+        # 두 사전 등록 블록 표(24·18)는 [2003-01-01, HOLDOUT_START) 를 정확히 타일링하므로 사다리의 "all" 행(합집합)은 동일 —
+        # sc["ladder"] 를 공유한다. 1999 시작 표는 OOS 자체가 다르므로 자기 사다리(sc["ladder99"])로만 채점한다.
+        acc_tables = {"24": {r: sc["bs24"][r] for r in PRIMARY_RUNGS}, "18": {r: sc["bs18"][r] for r in PRIMARY_RUNGS}}
+        acc_ladders = {"24": sc["ladder"], "18": sc["ladder"]}
+        if sc["bs99"] is not None and sc["ladder99"] is not None:
+            acc_tables["1999"] = {r: sc["bs99"][r] for r in PRIMARY_RUNGS}
+            acc_ladders["1999"] = sc["ladder99"]
+        require_tables = ACCEPTANCE_BLOCK_SETS[args.acceptance_blocks]
+        acc = C.acceptance(acc_tables, acc_ladders, rule=args.acceptance_rule, require_tables=require_tables)
     warns += [f"시대별 AUC/판정: {m}" for m in _messages(caught)]
-    acc["sensitivity_blocks"] = {
-        "blocks": "18" if alt_key == "bs18" else "24",
-        "deploy_mode": acc_alt["deploy_mode"], "tone_model": acc_alt["tone_model"],
-        "literal": acc_alt["literal"], "amended": acc_alt["amended"],
-        "agrees": bool(acc_alt["deploy_mode"] == acc["deploy_mode"] and acc_alt["tone_model"] == acc["tone_model"]),
-        "note": "§8.2 블록 민감도 — 사다리 'all' 행은 두 표가 동일(합집합 같음)",
-    }
-    if not acc["sensitivity_blocks"]["agrees"]:
-        warns.append(f"블록 민감도 불일치(§8.2): 주 {args.blocks}개월 → deploy={acc['deploy_mode']}/톤 모델 {acc['tone_model'] or '없음'} · "
-                     f"{acc['sensitivity_blocks']['blocks']}개월 → deploy={acc_alt['deploy_mode']}/톤 모델 {acc_alt['tone_model'] or '없음'} "
-                     "— 배치 판정이 블록 정의에 의존한다")
+    # §8.2 블록 민감도: 요구하지 않은 표의 판정은 acceptance 가 sensitivity_blocks 로 남긴다(사라지지 않게).
+    for t, s in (acc.get("sensitivity_blocks") or {}).items():
+        if not s.get("agrees"):
+            warns.append(f"블록 민감도(§8.2): {t} 표만으로 채점하면 deploy={s.get('deploy_mode')}/톤 모델 {s.get('tone_model') or '없음'} "
+                         f"— 판정 표({'+'.join(require_tables)})의 결론 deploy={acc['deploy_mode']}/톤 모델 {acc['tone_model'] or '없음'} 과 다르다")
+    if len(require_tables) > 1 and len({acc["per_table"][t]["tone_model"] for t in require_tables}) > 1:
+        warns.append("판정 표들이 서로 다른 단을 지목한다(블록 정의 의존) — 교집합만 배치한다(장부 #2d, 소유자 결정 2026-09-08): "
+                     + " · ".join(f"{t}→{acc['per_table'][t]['tone_model'] or '없음'}" for t in require_tables))
     if args.acceptance_rule != "literal":
         warns.append("acceptance_rule=amended 는 post hoc(#2a) — 장부 기재 없이는 채택 불가")
+    if len(require_tables) > 1:
+        warns.append(f"acceptance_blocks={args.acceptance_blocks}: 두 사전 등록 표의 교집합만 배치(장부 #2d, post hoc) — "
+                     + acc["verdict_line"])
+    else:
+        warns.append(f"acceptance_blocks={args.acceptance_blocks}: 표 하나만으로 판정 — 소유자 결정 #2d(두 사전 등록 표 교집합)를 "
+                     "우회한 민감도 실행이다. 이 산출물은 배포용이 아니다 — 정본을 덮어쓰지 않도록 --results-dir 를 별도 경로로 두라. — "
+                     + acc["verdict_line"])
 
     # 4) HAR-RV · v0 참조선
     har = har_block(inp, args.first_refit, wf_end, end, args.har_train_start, warns)
@@ -939,7 +969,8 @@ def main(argv: list[str] | None = None) -> int:
     run = {
         "generated_at_utc": generated, "end": _dstr(end), "wf_end_exclusive": wf_end, "holdout_start": HOLDOUT_START, "hard_cut": True,
         "holdout_final": bool(args.holdout_final), "unlock_exists_before_run": bool(unlock_exists), "first_refit": args.first_refit,
-        "first_refit_rule_ok": bool(ok), "primary_blocks": args.blocks, "acceptance_rule": args.acceptance_rule,
+        "first_refit_rule_ok": bool(ok), "ladder_blocks": args.blocks, "acceptance_rule": args.acceptance_rule,
+        "acceptance_blocks": args.acceptance_blocks, "acceptance_require_tables": list(acc["require_tables"]),
         "har_train_start": args.har_train_start, "spec_sha256": sha, "feature_rule": rule, "data_sha256": data_sha,
         "live_data_sha256": live_data_sha,
         "spec_changed": bool(det.get("spec_changed")), "live_mode": live_mode, "git_sha": _git_sha(),
@@ -995,6 +1026,8 @@ def main(argv: list[str] | None = None) -> int:
     # 7) 모델 · unlock 파일 · 리포트
     m_live.extra.update({"data_sha256": live_data_sha, "hard_cut_data_sha256": data_sha,
                          "end": _dstr(end), "live_mode": live_mode, "acceptance_rule": args.acceptance_rule,
+                         "acceptance_blocks": args.acceptance_blocks,
+                         "acceptance_require_tables": list(acc["require_tables"]),
                          "git_sha": run["git_sha"], "first_refit": args.first_refit, "determinism_status": det["status"]})
     M.save_model(m_live, model_path, deploy_mode=acc["deploy_mode"], tone_model=acc["tone_model"])
     summary["live_model"] = m_live.to_dict()

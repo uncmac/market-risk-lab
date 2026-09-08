@@ -16,7 +16,8 @@
     murphy_decomposition(p, y, bins) -> dict
     era_auc(feats, oos, eras) -> DataFrame
     ladder_table(oos, blocks) -> DataFrame
-    acceptance(block_scores24, ladder, pooled, rule="literal") -> dict
+    acceptance(block_scores_by_table, ladder, pooled, rule="literal", require_tables=("24","18")) -> dict
+        # 배치 = require_tables 의 **모든** 블록 표에서 통과한 단(교집합). 하나라도 떨어지면 info_only (장부 #2d).
     v0_reference(replay_completed, y, refit_dates) -> Series
     determinism_check(feats, y, ...) -> dict
 
@@ -65,6 +66,11 @@ V0_REF_MIN_POS = 40                  # 학습 양성 ≥ 40
 Z95 = 1.959963984540054
 AMENDED_BLOCK_FRAC = 8.0 / 11.0      # 부호검정 "≥ 8/11 블록"
 AMENDED_MIN_BLOCK_BSS = -0.05        # 완화안 A: 모든 블록 bss_clim ≥ −0.05
+DEFAULT_TABLE = "24"                 # 예전 형식(표 하나)이 들어오면 이 이름으로 부른다
+DEFAULT_REQUIRE_TABLES = ("24", "18")   # 운영 기본: 두 표 모두에서 통과해야 배치 (소유자 결정 2026-09-08, 장부 #2d)
+CONJUNCTION_DECISION = "소유자 결정 2026-09-08"   # #2d — VALIDATION §6 이 블록을 "18~24개월" 로 사전 등록했다
+_RUNG_ORDER_DESC = ("M3", "M2", "M1")           # 배치 후보를 훑는 순서(위에서 아래로)
+_TABLE_KO = {"24": "24개월", "18": "18개월", "1999": "1999 시작"}
 
 # 사다리 단·벤치마크 → 열
 _FIXED_COLS = {"M0": "p_vix", "B1": "p_vix", "BGK": "p_vix_bgk", "DRIFTLESS": "p_vix_driftless", "clim": "clim", "CLIM": "clim"}
@@ -781,49 +787,230 @@ def _amended(rung: str, bs: pd.DataFrame, ladder: pd.DataFrame, pooled: dict, mi
             "ci_lo_clim": a_lo, "ci_lo_vix": b_lo, "ci_lo_info": c_lo, "info_step": f"{prev}->{rung}" if prev else None,
             "n_blocks": n_blocks, "n_blocks_clim_pos": n_clim_pos, "n_blocks_vix_nonneg": n_vix_nonneg, "min_pass_blocks": int(min_pass),
             "min_block_bss_clim": float(blk["bss_clim"].min()) if len(blk) else float("nan"),
-            "rule_text": ("A) 전체 bss_clim>0 ∧ loss_diff_ci(clim→M).lo>0 ∧ 모든 블록 bss_clim≥−0.05 ∧ ≥8/11 블록>0 ; "
-                          "B) 전체 bss_vix(B1)≥0 ∧ loss_diff_ci(B1→M).lo≥0 ∧ ≥8/11 블록≥0 ; C) 정보 단(M_{k−1}→M_k).lo>0 — post hoc(#2a)")}
+            "min_block_clim": _min_block_clim(bs),
+            # 표마다 블록 수가 다르다(24개월=11, 18개월=14, 1999 시작=13) — 실제로 적용한 임계값을 그대로 적는다.
+            "rule_text": (f"A) 전체 bss_clim>0 ∧ loss_diff_ci(clim→M).lo>0 ∧ 모든 블록 bss_clim≥−0.05 ∧ ≥{min_pass}/{n_blocks} 블록>0 ; "
+                          f"B) 전체 bss_vix(B1)≥0 ∧ loss_diff_ci(B1→M).lo≥0 ∧ ≥{min_pass}/{n_blocks} 블록≥0 ; C) 정보 단(M_{{k−1}}→M_k).lo>0 — post hoc(#2a)")}
 
 
-def acceptance(block_scores24, ladder: pd.DataFrame, pooled: dict | None = None, rule: str = "literal",
-               candidate: str = "M3") -> dict:
-    """수용 판정.
-    block_scores24: {rung: block_scores(oos, BLOCKS_24, rung_col(rung))} (DataFrame 하나면 {candidate: df}).
-    ladder: ladder_table(oos, BLOCKS_24). pooled: {rung: {bss_clim, bss_vix, ...}} (None 이면 block_scores 의 "all" 행).
-    literal(VALIDATION §6 그대로): pass_clim = all(bss_clim > 0) ; pass_vix = all(bss_vix ≥ 0) ; failing_blocks.
-    amended(#2a, 사후): A ∧ B ∧ 자기 단의 C 를 만족하는 최상위 단. deploy: rule 에 따라 tone_model / deploy_mode."""
-    if rule not in ("literal", "amended"):
-        raise ValueError("rule 은 'literal' 또는 'amended'")
-    if isinstance(block_scores24, pd.DataFrame):
-        block_scores24 = {candidate: block_scores24}
-    if not block_scores24 or candidate not in block_scores24:
-        raise ValueError(f"block_scores24 에 후보 {candidate} 가 없습니다")
+def _min_block_clim(bs: pd.DataFrame) -> str:
+    """bss_clim 이 가장 낮은 블록을 "번호 (시작~끝)" 로. 채점된 블록이 없으면 "—"."""
+    blk = bs[(bs["block"].astype(str) != "all") & (bs["n"] > 0)]
+    if not len(blk) or not bool(np.isfinite(blk["bss_clim"].to_numpy(dtype=float)).any()):
+        return "—"
+    row = blk.loc[blk["bss_clim"].idxmin()]
+    return f"{row['block']} ({row.get('start', '?')}~{row.get('end', '?')})"
+
+
+def _table_ko(name) -> str:
+    """블록 표 이름 → 사람이 읽는 이름."""
+    return _TABLE_KO.get(str(name), f"{name} 블록")
+
+
+def _sgn4(v) -> str:
+    """부호 있는 소수 4자리 — 음수는 활자 빼기표(−). 값이 없으면 "—"."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    return "—" if not math.isfinite(f) else f"{f:+.4f}".replace("-", "−")
+
+
+def _norm_tables(block_scores_by_table, candidate: str) -> tuple[dict, bool]:
+    """DataFrame · {단: DataFrame} · {표: {단: DataFrame}} → {표: {단: DataFrame}}. 반환 (tables, legacy)."""
+    if isinstance(block_scores_by_table, pd.DataFrame):
+        return {DEFAULT_TABLE: {candidate: block_scores_by_table}}, True
+    if not isinstance(block_scores_by_table, dict) or not block_scores_by_table:
+        raise ValueError("block_scores_by_table 는 DataFrame · {단: DataFrame} · {표: {단: DataFrame}} 중 하나여야 합니다")
+    vals = list(block_scores_by_table.values())
+    if all(isinstance(v, pd.DataFrame) for v in vals):
+        return {DEFAULT_TABLE: dict(block_scores_by_table)}, True
+    if all(isinstance(v, dict) for v in vals):
+        out = {}
+        for t, d in block_scores_by_table.items():
+            if not d or not all(isinstance(x, pd.DataFrame) for x in d.values()):
+                raise ValueError(f"블록 표 {t} 의 값은 {{단: DataFrame}} 이어야 합니다")
+            out[str(t)] = dict(d)
+        return out, False
+    raise ValueError("block_scores_by_table 에 DataFrame 과 dict 가 섞여 있습니다")
+
+
+def _norm_ladders(ladder, tables: dict) -> dict:
+    """사다리 표: DataFrame 하나면 모든 표가 공유, dict 면 표마다 자기 사다리(빠지면 오류 — 조용한 대체 금지)."""
+    if ladder is None or isinstance(ladder, pd.DataFrame):
+        return {t: ladder for t in tables}
+    if isinstance(ladder, dict):
+        miss = [t for t in tables if t not in ladder]
+        if miss:
+            raise ValueError(f"ladder 에 표 {miss} 의 사다리가 없습니다 — 다른 표의 사다리를 조용히 쓰지 않는다")
+        return {t: ladder[t] for t in tables}
+    raise TypeError("ladder 는 DataFrame 또는 {표: DataFrame} 여야 합니다")
+
+
+def _norm_pooled(pooled, tables: dict) -> dict:
+    """pooled: {단: {...}}(모든 표에 같이) 또는 {표: {단: {...}}}."""
+    if not pooled:
+        return {t: {} for t in tables}
+    if not isinstance(pooled, dict):
+        raise TypeError("pooled 는 dict 여야 합니다")
+    by_table = (set(str(k) for k in pooled) <= set(tables)
+                and all(isinstance(v, dict) and v and all(isinstance(vv, dict) for vv in v.values()) for v in pooled.values()))
+    if by_table:
+        return {t: dict(pooled.get(t) or {}) for t in tables}
+    return {t: dict(pooled) for t in tables}
+
+
+def _table_verdict(name, bs_by_rung: dict, ladder, pooled: dict, rule: str, candidate: str) -> dict:
+    """블록 표 하나의 판정 — 단별 literal/amended 와 그 표에서 통과한 단 목록(passing_rungs)."""
+    if candidate not in bs_by_rung:
+        raise ValueError(f"블록 표 {name} 에 후보 {candidate} 가 없습니다")
     pooled = dict(pooled or {})
-    for r, bs in block_scores24.items():
+    for r, bs in bs_by_rung.items():
         if r not in pooled:
             allrow = bs[bs["block"].astype(str) == "all"]
             pooled[r] = allrow.iloc[0].to_dict() if len(allrow) else {}
-    n_blocks = int((block_scores24[candidate]["block"].astype(str) != "all").sum())
+    n_blocks = int((bs_by_rung[candidate]["block"].astype(str) != "all").sum())
     min_pass = int(math.ceil(n_blocks * AMENDED_BLOCK_FRAC - 1e-9))
-
-    literal = {r: _literal(bs) for r, bs in block_scores24.items()}
-    amended = {r: _amended(r, bs, ladder, pooled[r], min_pass) for r, bs in block_scores24.items()}
-    order = [r for r in ("M3", "M2", "M1") if r in block_scores24]
-
+    literal = {r: _literal(bs) for r, bs in bs_by_rung.items()}
+    amended = {r: _amended(r, bs, ladder, pooled[r], min_pass) for r, bs in bs_by_rung.items()}
+    order = [r for r in _RUNG_ORDER_DESC if r in bs_by_rung]
     lit_tone = candidate if literal[candidate]["pass"] else None
     amd_tone = next((r for r in order if amended[r]["pass"]), None)
-    tone_model = lit_tone if rule == "literal" else amd_tone
-    deploy_mode = "tones" if tone_model else "info_only"
     if rule == "literal":
-        rationale = (f"§6 문자 그대로: {candidate} {'통과' if lit_tone else '실패'}"
-                     + (f" (실패 블록 {literal[candidate]['failing_blocks']})" if not lit_tone else ""))
+        passing = [candidate] if lit_tone else []
+        detail = (f"{candidate} {'통과' if lit_tone else '실패'}"
+                  + ("" if lit_tone else f"(실패 블록 {literal[candidate]['failing_blocks']})"))
     else:
-        rationale = (f"#2a 완화안(post hoc): A∧B∧C 를 만족하는 최상위 단 = {amd_tone or '없음'} "
-                     + "; ".join(f"{r}:A={amended[r]['A']},B={amended[r]['B']},C={amended[r]['C']}" for r in order))
-    return {"rule": rule, "candidate": candidate, "literal": literal, "amended": amended,
-            "literal_tone_model": lit_tone, "amended_tone_model": amd_tone,
-            "deploy_mode": deploy_mode, "tone_model": tone_model, "rationale": rationale,
-            "n_blocks": n_blocks, "min_pass_blocks": min_pass, "post_hoc_note": "amended 는 #2 사전 관측 이후의 규칙이므로 post hoc"}
+        passing = [r for r in order if amended[r]["pass"]]
+        detail = "; ".join(f"{r}:A={amended[r]['A']},B={amended[r]['B']},C={amended[r]['C']}" for r in order)
+    tone = lit_tone if rule == "literal" else amd_tone
+    return {"table": str(name), "blocks": str(name), "rule": rule, "candidate": candidate,
+            "literal": literal, "amended": amended, "literal_tone_model": lit_tone, "amended_tone_model": amd_tone,
+            "passing_rungs": list(passing), "tone_model": tone, "deploy_mode": "tones" if tone else "info_only",
+            "n_blocks": n_blocks, "min_pass_blocks": min_pass, "detail": detail}
+
+
+def _fail_short(entry: dict, rung: str, rule: str) -> str:
+    """짧은 실패 사유 (카드·판정 상자의 한 줄) — 실제로 판정을 지게 만든 값을 고른다."""
+    if rule == "literal":
+        lit = entry["literal"].get(rung) or {}
+        if lit.get("failing_blocks"):
+            return f"{rung} 실패 블록 {lit['failing_blocks']}"
+        if lit.get("n_blocks_empty"):
+            return f"{rung} 채점 불가 블록 {lit['n_blocks_empty']}개"
+        return f"{rung} 미통과"
+    amd = entry["amended"].get(rung) or {}
+    if not amd:
+        return f"{rung} 판정 없음"
+    bad = [k for k in ("A", "B", "C") if not amd.get(k)]
+    mn = amd.get("min_block_bss_clim")
+    mn = float(mn) if isinstance(mn, (int, float)) and not isinstance(mn, bool) else float("nan")
+    if "A" in bad and math.isfinite(mn) and mn < AMENDED_MIN_BLOCK_BSS:
+        return f"최소 블록 BSS_clim {_sgn4(mn)}"
+    return f"{rung} {'∧'.join(bad) or '—'} 미충족" if bad else f"{rung} 은 통과(다른 표와 단이 어긋남)"
+
+
+def _fail_long(entry: dict, rung: str, rule: str) -> str:
+    """긴 실패 사유 (rationale·장부용) — 어느 기준이 어떤 값으로 졌는지."""
+    if rule == "literal":
+        lit = entry["literal"].get(rung) or {}
+        return (f"{rung}: 실패 블록 {lit.get('failing_blocks', [])}, 최소 BSS_clim {_sgn4(lit.get('min_bss_clim'))}, "
+                f"최소 BSS_vix {_sgn4(lit.get('min_bss_vix'))}")
+    amd = entry["amended"].get(rung) or {}
+    return (f"{rung}: A={amd.get('A')}, B={amd.get('B')}, C={amd.get('C')}, "
+            f"최소 블록 BSS_clim {_sgn4(amd.get('min_block_bss_clim'))} @ 블록 {amd.get('min_block_clim', '—')}")
+
+
+def acceptance(block_scores_by_table, ladder, pooled: dict | None = None, rule: str = "literal",
+               candidate: str = "M3", require_tables=None) -> dict:
+    """수용 판정 — **요구 표 전부의 교집합**(소유자 결정 2026-09-08, 장부 #2d).
+
+    block_scores_by_table:
+      * DataFrame                — 후보 한 단의 블록 표 (예전 호출)
+      * {단: DataFrame}          — 표 하나 (예전 호출). 이름은 "24"
+      * {표: {단: DataFrame}}    — 여러 표 (예: {"24": ..., "18": ..., "1999": ...})
+    ladder: ladder_table(...) 하나(모든 표가 공유) 또는 {표: ladder_table(...)}.
+    pooled: {단: {bss_clim, bss_vix, ...}} 또는 {표: {단: {...}}} (None 이면 block_scores 의 "all" 행).
+    require_tables: 배치 판정을 요구하는 표 이름들. None 이면 — 예전 형식은 그 표 하나, 새 형식은 주어진 표 전부.
+      운영 기본값은 ("24", "18") 이고 호출부(scripts/run_calibration.py --acceptance-blocks)가 명시한다.
+
+    literal(VALIDATION §6 그대로): pass_clim = all(bss_clim > 0) ∧ pass_vix = all(bss_vix ≥ 0).
+    amended(#2a, 사후): A ∧ B ∧ 자기 단의 C 를 만족하는 최상위 단.
+    **배치**: require_tables 의 모든 표에서 통과한 단 중 최상위(교집합). 하나라도 떨어지면 info_only.
+    교집합이므로 require_tables 의 순서는 판정을 바꾸지 않는다(하위 호환 미러링만 첫 표 기준)."""
+    if rule not in ("literal", "amended"):
+        raise ValueError("rule 은 'literal' 또는 'amended'")
+    tables, legacy = _norm_tables(block_scores_by_table, candidate)
+    if require_tables is None:
+        require_tables = (DEFAULT_TABLE,) if legacy else tuple(tables)
+    req = tuple(str(t) for t in require_tables)
+    if not req:
+        raise ValueError("require_tables 가 비어 있습니다 — 판정할 표가 없습니다")
+    if len(set(req)) != len(req):
+        raise ValueError(f"require_tables 에 같은 표가 두 번: {req}")
+    missing = [t for t in req if t not in tables]
+    if missing:
+        raise ValueError(f"require_tables {missing} 에 해당하는 블록 표가 없습니다 (있는 표: {sorted(tables)})")
+
+    ladders = _norm_ladders(ladder, tables)
+    pooled_by_table = _norm_pooled(pooled, tables)
+    per_full = {t: _table_verdict(t, tables[t], ladders[t], pooled_by_table[t], rule, candidate) for t in tables}
+
+    sets = [set(per_full[t]["passing_rungs"]) for t in req]
+    common = set(sets[0]).intersection(*sets[1:])
+    union = set().union(*sets)
+    tone_model = next((r for r in _RUNG_ORDER_DESC if r in common), None)
+    deploy_mode = "tones" if tone_model else "info_only"
+    best_alone = next((r for r in _RUNG_ORDER_DESC if r in union), None)   # 표 하나만 봤다면 배치됐을 단
+    named = best_alone or candidate
+    blocking = [] if tone_model else [t for t in req if named not in per_full[t]["passing_rungs"]]
+
+    parts = []
+    for t in req:
+        e = per_full[t]
+        parts.append(f"{_table_ko(t)} 표: {e['tone_model']} 통과" if e["tone_model"]
+                     else f"{_table_ko(t)} 표: 실패({_fail_short(e, named, rule)})")
+    tail = f"톤 모델 {tone_model} 배치(tones)" if tone_model else "배치 없음(정보 제공 전용)"
+    if len(req) > 1:
+        need = "두 표 모두 통과 요구" if len(req) == 2 else f"{len(req)}개 표 모두 통과 요구"
+        verdict_line = " · ".join(parts) + f" → {need}({CONJUNCTION_DECISION}) → {tail}"
+    else:
+        verdict_line = " · ".join(parts) + f" → {tail}"
+
+    prefix = "§6 문자 그대로(사전 등록)" if rule == "literal" else "#2a 완화안(post hoc)"
+    rationale = f"{prefix} — {verdict_line}"
+    if blocking:
+        rationale += " · 막은 표: " + " ; ".join(f"{_table_ko(t)}[{_fail_long(per_full[t], named, rule)}]" for t in blocking)
+    rationale += " · 표별 판정: " + " ; ".join(f"{_table_ko(t)}={per_full[t]['detail']}" for t in req)
+
+    sens = {}
+    for t in tables:
+        if t in req:
+            continue
+        e = per_full[t]
+        sens[t] = {"blocks": t, "deploy_mode": e["deploy_mode"], "tone_model": e["tone_model"],
+                   "literal": e["literal"], "amended": e["amended"],
+                   "agrees": bool(e["deploy_mode"] == deploy_mode and e["tone_model"] == tone_model),
+                   "note": f"§8.2 블록 민감도 — {_table_ko(t)} 표는 배치 판정에 쓰지 않는다(require_tables={list(req)})"}
+
+    primary = req[0]
+    p = per_full[primary]
+    conj = len(req) > 1
+    return {"rule": rule, "candidate": candidate, "require_tables": list(req), "primary_table": primary,
+            "conjunction": conj, "tables": per_full,
+            "per_table": {t: {**{k: v for k, v in per_full[t].items() if k not in ("literal", "amended")},
+                              "required": bool(t in req)} for t in tables},
+            "blocking_tables": list(blocking), "tone_model": tone_model, "deploy_mode": deploy_mode,
+            "verdict_line": verdict_line, "rationale": rationale,
+            # ── 하위 호환: 주 표(require_tables[0]) 의 판정을 그대로 노출한다
+            "literal": p["literal"], "amended": p["amended"],
+            "literal_tone_model": p["literal_tone_model"], "amended_tone_model": p["amended_tone_model"],
+            "n_blocks": p["n_blocks"], "min_pass_blocks": p["min_pass_blocks"],
+            "post_hoc_note": ("amended 는 #2 사전 관측 이후의 규칙이므로 post hoc"
+                              + (f" · 두 표 교집합 요구도 post hoc(장부 #2d, {CONJUNCTION_DECISION})" if conj else "")),
+            "conjunction_note": (f"배치는 require_tables {list(req)} 전부에서 통과한 단만 — {CONJUNCTION_DECISION}(장부 #2d)"
+                                 if conj else f"표 하나로 판정(require_tables={list(req)})"),
+            "sensitivity_blocks": sens}
 
 
 # ------------------------------------------------------------------

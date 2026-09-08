@@ -270,7 +270,9 @@ def test_window_reproduces_recorded_fetch_real(bundle, fixture_path):
         anchor = pd.Timestamp(rec["last"])
         exp = rule_rows(close[col], anchor, span)
         assert pd.Timestamp(rec["first"]) == exp.index[0], (k, "라이브 창 시작이 규칙과 다름")
-        phantom = 1 if anchor > spy_last else 0
+        # 유령 봉(휴장일 앵커)은 기록 당시 캐시엔 없었지만 캐시가 전진하면 포함된다
+        # (apply_guards 가 'SPY 마지막 일자 이후'만 잘라내므로) — 재구성에 이미 들어왔으면 더하지 않는다.
+        phantom = 1 if (anchor > spy_last and anchor not in close[col].dropna().index) else 0
         assert rec["rows"] == len(exp) + phantom, (k, "라이브 행 수가 규칙과 다름")
     b_rec = fx["btc"]
     assert pd.Timestamp(b_rec["first"]) == pd.Timestamp(b_rec["last"]) - two_y and b_rec["rows"] in (731, 732)

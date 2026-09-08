@@ -7,11 +7,11 @@
     "x_ma"
   ],
   "coef": {
-    "x_vix": 0.6914563306353225,
-    "x_har": 0.5739488865622492,
-    "x_ma": -2.3439894957483034
+    "x_vix": 0.6914557412478084,
+    "x_har": 0.5739566907113417,
+    "x_ma": -2.3439857028336606
   },
-  "intercept": -0.9135117025550482,
+  "intercept": -0.9135099947419851,
   "clim": 0.17139540882125354,
   "refit_date": "2024-08-30",
   "train_start": "1993-10-14",
@@ -21,8 +21,8 @@
   "n_params": 4,
   "feature_rule": "p2|x_vix=logit(refl(VIX,dd=0.05,h=20,drift=-s2/2))|x_har=mean_log(rv1,rv5,rv22;GK+OV;floor=1e-8)-ln(VIX/100)|x_ma=C/SMA180-1|vix_ffill<=3|purge=20|C=1.0|train_start=1993-10-14",
   "spec_sha256": "81c2a6bf7d43b57edda462f8e8133f13de616664d6e21b21cc92f7b1fbf992d2",
-  "deploy_mode": "tones",
-  "tone_model": "M1",
+  "deploy_mode": "info_only",
+  "tone_model": null,
   "acceptance_ref": "summary_p2.json:acceptance",
   "extra": {
     "rung": "M3",
@@ -30,14 +30,19 @@
     "n_iter": 20,
     "purge": 20,
     "train_start_rule": "1993-10-14",
-    "data_sha256": "6b6f14300abd98f2d16390b1a4b41469c009e09155e8b4fe61861da9e5be4473",
-    "hard_cut_data_sha256": "6b6f14300abd98f2d16390b1a4b41469c009e09155e8b4fe61861da9e5be4473",
+    "data_sha256": "9b125057424cbad90d2e5f363c0201b0d2b22bac062debba92413e1eb4947e8a",
+    "hard_cut_data_sha256": "9b125057424cbad90d2e5f363c0201b0d2b22bac062debba92413e1eb4947e8a",
     "end": "2024-08-30",
     "live_mode": "pre_holdout_hard_cut",
     "acceptance_rule": "amended",
-    "git_sha": "7ffdea5d01836f0c5862e04506a5666b09fafb13",
+    "acceptance_blocks": "both",
+    "acceptance_require_tables": [
+      "24",
+      "18"
+    ],
+    "git_sha": "063462ff65feb1fc7f26f42151474212ba1d6705",
     "first_refit": "2003-01-02",
-    "determinism_status": "compared"
+    "determinism_status": "data_changed"
   },
-  "created_at_utc": "2026-09-08T06:55:14Z"
+  "created_at_utc": "2026-09-08T14:35:29Z"
 }

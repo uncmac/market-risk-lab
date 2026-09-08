@@ -633,6 +633,99 @@ def test_acceptance_all_fail_is_info_only():
 
 
 # ------------------------------------------------------------------
+# 수용 판정 — 여러 블록 표의 교집합 (소유자 결정 2026-09-08, 장부 #2d)
+# ------------------------------------------------------------------
+def _bs_blocks(blocks, bss_clim, bss_vix, pooled_clim, pooled_vix):
+    """임의의 블록 정의(24 / 18)로 만든 합성 블록 표."""
+    rows = []
+    for k, (a, b) in enumerate(blocks, start=1):
+        rows.append({"block": k, "start": a, "end": b, "n": 400, "n_blocks": 20, "n_pos": 60, "base": 0.15, "mean_p": 0.16,
+                     "brier": 0.12, "bss_clim": bss_clim[k - 1], "bss_vix": bss_vix[k - 1], "bss_vix_bgk": 0.1,
+                     "bss_m1": 0.0, "auc": 0.65})
+    rows.append({"block": "all", "start": blocks[0][0], "end": blocks[-1][1], "n": 5433, "n_blocks": 271, "n_pos": 839,
+                 "base": 0.154, "mean_p": 0.16, "brier": 0.12, "bss_clim": pooled_clim, "bss_vix": pooled_vix,
+                 "bss_vix_bgk": 0.1, "bss_m1": 0.0, "auc": 0.68})
+    return pd.DataFrame(rows)
+
+
+def _two_tables():
+    """실측(2026-09-07 실행)을 본뜬 합성: 24개월 표에서는 M1 만 A∧B∧C 를 통과하고,
+    18개월 표에서는 한 블록의 BSS_clim −0.0996 (< −0.05) 때문에 어느 단도 A 를 통과하지 못한다."""
+    good24 = _bs_blocks(BLOCKS_24, [0.05] * 11, [0.1] * 11, 0.080, 0.191)
+    bad18 = _bs_blocks(BLOCKS_18, [0.05] * 10 + [-0.0996] + [0.05] * 3, [0.1] * 14, 0.080, 0.191)
+    tables = {"24": {"M1": good24, "M2": good24, "M3": good24}, "18": {"M1": bad18, "M2": bad18, "M3": bad18}}
+    lad = _ladder_frame({"M1->M2": -0.0002, "M2->M3": -0.0003})        # M2·M3 는 C 미충족 → 표 하나만 보면 톤 모델 M1
+    return tables, lad
+
+
+def test_acceptance_conjunction_requires_every_required_table():
+    """한 표에서만 통과한 단은 배치하지 않는다 — require_tables=("24","18") → info_only, ("24",) → tones/M1."""
+    tables, lad = _two_tables()
+    both = C.acceptance(tables, lad, None, rule="amended", require_tables=("24", "18"))
+    assert both["deploy_mode"] == "info_only" and both["tone_model"] is None
+    assert both["require_tables"] == ["24", "18"] and both["conjunction"] is True
+    assert both["per_table"]["24"]["tone_model"] == "M1" and both["per_table"]["24"]["passing_rungs"] == ["M1"]
+    assert both["per_table"]["18"]["tone_model"] is None and both["per_table"]["18"]["passing_rungs"] == []
+    assert both["blocking_tables"] == ["18"]
+    assert both["tables"]["18"]["amended"]["M1"]["A"] is False
+    assert both["tables"]["18"]["amended"]["M1"]["min_block_bss_clim"] == pytest.approx(-0.0996)
+    assert both["tables"]["18"]["amended"]["M1"]["min_block_clim"].startswith("11 (")
+    # 판정 문구: 두 표의 판정과 최종 결론을 한 줄로 (리포트·카드가 이 줄을 그대로 쓴다)
+    assert "24개월 표: M1 통과" in both["verdict_line"]
+    assert "18개월 표: 실패(최소 블록 BSS_clim −0.0996)" in both["verdict_line"]
+    assert "두 표 모두 통과 요구(소유자 결정 2026-09-08)" in both["verdict_line"]
+    assert both["verdict_line"].endswith("배치 없음(정보 제공 전용)")
+    assert "18개월[M1: A=False" in both["rationale"] and both["sensitivity_blocks"] == {}
+    # 24개월 표 하나만 요구하면 오늘까지의 판정(톤 모델 M1) — 18개월 표는 민감도로 남는다
+    only24 = C.acceptance(tables, lad, None, rule="amended", require_tables=("24",))
+    assert only24["deploy_mode"] == "tones" and only24["tone_model"] == "M1"
+    assert set(only24["sensitivity_blocks"]) == {"18"} and only24["sensitivity_blocks"]["18"]["agrees"] is False
+    assert only24["sensitivity_blocks"]["18"]["deploy_mode"] == "info_only"
+    only18 = C.acceptance(tables, lad, None, rule="amended", require_tables=("18",))
+    assert only18["deploy_mode"] == "info_only" and set(only18["sensitivity_blocks"]) == {"24"}
+
+
+def test_acceptance_conjunction_is_order_independent():
+    """교집합이므로 require_tables 순서·입력 dict 순서는 판정을 바꾸지 않는다(하위 호환 미러링만 첫 표를 따른다)."""
+    tables, lad = _two_tables()
+    a = C.acceptance(tables, lad, None, rule="amended", require_tables=("24", "18"))
+    b = C.acceptance(tables, lad, None, rule="amended", require_tables=("18", "24"))
+    flipped = {"18": tables["18"], "24": tables["24"]}
+    c = C.acceptance(flipped, lad, None, rule="amended", require_tables=("18", "24"))
+    for other in (b, c):
+        assert (other["deploy_mode"], other["tone_model"]) == (a["deploy_mode"], a["tone_model"]) == ("info_only", None)
+        assert set(other["blocking_tables"]) == set(a["blocking_tables"]) == {"18"}
+        assert set(other["require_tables"]) == set(a["require_tables"])
+    # 미러링(하위 호환)만 순서를 따른다: 주 표 = require_tables[0]
+    assert a["primary_table"] == "24" and b["primary_table"] == "18"
+    assert a["amended"]["M1"]["pass"] is True and b["amended"]["M1"]["pass"] is False
+
+
+def test_acceptance_single_table_callers_and_missing_inputs():
+    """예전 호출(표 하나·DataFrame 하나)은 그대로 동작하고, 없는 표·없는 사다리는 조용히 넘어가지 않는다."""
+    good = _bs_frame([0.05] * 11, [0.1] * 11, 0.08, 0.2)
+    lad = _ladder_frame({})
+    acc = C.acceptance({"M1": good, "M2": good, "M3": good}, lad, None, rule="amended")
+    assert acc["require_tables"] == ["24"] and acc["primary_table"] == "24" and acc["conjunction"] is False
+    assert acc["tone_model"] == "M3" and acc["deploy_mode"] == "tones" and acc["sensitivity_blocks"] == {}
+    assert acc["per_table"]["24"]["required"] is True and acc["n_blocks"] == 11 and acc["min_pass_blocks"] == 8
+    one = C.acceptance(good, lad, None)                          # DataFrame 하나 = 후보(M3) 한 단
+    assert one["tone_model"] == "M3" and one["require_tables"] == ["24"]
+    with pytest.raises(ValueError, match="18"):                  # 요구한 표가 없는데 조용히 24 로 판정하지 않는다
+        C.acceptance({"M3": good}, lad, None, require_tables=("24", "18"))
+    with pytest.raises(ValueError, match="두 번"):
+        C.acceptance({"M3": good}, lad, None, require_tables=("24", "24"))
+    tables, lad2 = _two_tables()
+    with pytest.raises(ValueError, match="사다리"):                # 표마다 사다리를 줄 때 하나가 빠지면 다른 표 것을 빌리지 않는다
+        C.acceptance(tables, {"24": lad2}, None, rule="amended", require_tables=("24", "18"))
+    # 표마다 자기 사다리를 쓰면 그 표의 CI 로만 채점한다
+    per_lad = {"24": lad2, "18": _ladder_frame({k: -0.01 for k in C.STEP_LABELS})}
+    acc2 = C.acceptance(tables, per_lad, None, rule="amended", require_tables=("24", "18"))
+    assert acc2["tables"]["18"]["amended"]["M1"]["ci_lo_clim"] == pytest.approx(-0.01)
+    assert acc2["tables"]["24"]["amended"]["M1"]["ci_lo_clim"] == pytest.approx(0.001)
+
+
+# ------------------------------------------------------------------
 # v0 참조선 (예산 밖)
 # ------------------------------------------------------------------
 def test_v0_reference(cut):

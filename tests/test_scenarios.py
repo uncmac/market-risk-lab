@@ -492,12 +492,14 @@ def test_real_cache_bin_table_matches_design_stage_table(real, capsys):
     print("\n[bin_table p_m3 2003~2024-08]\n" + tbl[["bin", "n", "n_eff", "obs", "wilson_lo", "wilson_hi",
                                                      "ret_p10", "ret_p50", "ret_p90", "mdd_p10",
                                                      "share_ep10_start", "grey"]].round(4).to_string())
-    # 공식 p_m3 실측. 설계 단계 근사(SPEC_BIN_N)와는 경계 부근 ~9행이 다르게 배정될 뿐
+    # 공식 p_m3 실측. 총 행수와 풀링 그룹은 설계 단계 근사(SPEC_BIN_N)와 같다.
+    # 아래 실측 스냅숏은 커밋된 캐시(data/)와 커밋된 calib_p2_walkforward.csv 에서 나온 값 — 둘이 어긋나면 여기서 잡힌다
+    # (장부 #2d 재현성 정정 2026-09-08: 캐시 전량 재다운로드로 경계 부근 배정이 옮겨져 [1431, 1131, 867, 620, 454, 930] 에서 갱신)
     # 총 행수와 풀링 그룹은 동일하다 — §2/§6.2 '근사와 공식을 섞지 않는다'.
     assert sum(tbl.attrs["n_per_bin"]) == sum(SPEC_BIN_N) == 5433
     assert S.pool_bins(tbl.attrs["n_per_bin"]) == S.pool_bins(SPEC_BIN_N) \
         == [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 8)]
-    assert list(tbl["n"]) == [1431, 1131, 867, 620, 454, 930]          # 공식 실측
+    assert list(tbl["n"]) == [1422, 1137, 869, 620, 453, 932]          # 공식 실측
     assert [float(v) for v in tbl["n_eff"]] == pytest.approx([71.1, 56.9, 43.5, 31.0, 22.6, 46.6], abs=1.0)
     assert [float(v) for v in tbl["obs"]] == pytest.approx([0.076, 0.102, 0.116, 0.161, 0.236, 0.329], abs=0.005)
     assert [round(100 * float(v), 1) for v in tbl["ret_p10"][:5]] == [-3.0, -3.6, -3.9, -5.3, -6.1]

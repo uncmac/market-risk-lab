@@ -261,6 +261,16 @@ def resolve_deployment(acc, m: M.LogitModel, live_models: dict, warns: list[str]
         return "없음" if v is None or str(v).strip() in ("", "None") else str(v)
 
     if acc.get("deploy_mode"):
+        # 소유자 결정 #2d: 두 사전 등록 표(24·18) 모두에서 통과해야 배치한다. 민감도 실행(--acceptance-blocks 24|18)이
+        # 정본 results/ 를 덮어썼다면 요구 표가 하나뿐이므로 그 판정으로는 배포하지 않는다(조용한 실패 금지).
+        # require_tables 키가 없는 옛 산출물은 예전 동작 그대로 둔다(`req and` 가드).
+        from mrl import calibrate as C                                  # 지연 임포트: daily 경로의 무거운 의존 회피
+        req = [str(t) for t in (acc.get("require_tables") or [])]
+        if req and not set(C.DEFAULT_REQUIRE_TABLES) <= set(req):
+            warns.append(f"summary_p2.json.acceptance 의 요구 표가 {req} — 소유자 결정 #2d 는 "
+                         f"{list(C.DEFAULT_REQUIRE_TABLES)} 두 표 모두의 통과를 요구합니다 → 배포 없음(info_only)으로 다룹니다 "
+                         "(민감도 실행이 정본 results/ 를 덮어썼는지 확인하고 --acceptance-blocks both 로 다시 실행하세요)")
+            acc = {**acc, "deploy_mode": "info_only", "tone_model": None}
         deploy, tone, source = str(acc.get("deploy_mode")), acc.get("tone_model"), "summary_p2.json:acceptance"
         if (str(m.deploy_mode) != deploy) or ((m.tone_model or None) != (tone or None)):
             warns.append(f"model_p2.json 의 배치(deploy {m.deploy_mode} · tone_model {_tm(m.tone_model)}) 와 "

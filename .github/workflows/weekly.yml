@@ -76,8 +76,12 @@ jobs:
 
       - name: scripts/run_calibration.py (특징 → walk-forward 사다리 → 검정 → HAR-RV → results/ + docs/calibration_p2.html; 라이브 계수 결정론 검사)
         # 하드컷(--holdout-final 없음). 결정론 검사 실패(exit 1)면 여기서 멈추고 아래 단계·커밋은 실행되지 않는다.
-        # --acceptance-rule amended: VALIDATION §8 실험 #2a 경로 (b) — 소유자 결정 2026-09-08 (post hoc, 장부 기재됨).
-        run: python scripts/run_calibration.py --acceptance-rule amended
+        # --acceptance-rule amended:   VALIDATION.md §8 장부 #2a — 경로 (b) 완화안 (post hoc, 소유자 결정 2026-09-08).
+        # --acceptance-blocks both:    VALIDATION.md §8 장부 #2d — 사전 등록된 두 블록 표(24개월·18개월) **모두**에서 통과해야
+        #                              배치한다(소유자의 두 번째 결정 2026-09-08). §6 이 블록을 "18~24개월" 로 사전 등록했고
+        #                              두 표가 어긋났기 때문이다. 오늘의 결과: deploy_mode=info_only · tone_model=none.
+        #                              요구하지 않은 표(1999 시작)는 acceptance.sensitivity_blocks 로 계속 공개된다.
+        run: python scripts/run_calibration.py --acceptance-rule amended --acceptance-blocks both
 
       - name: scripts/run_backtest_v1.py (결정층 → 톤 → v0 와 같은 성적표 → results/ + docs/backtest_v1.html)
         run: python scripts/run_backtest_v1.py --all-configs

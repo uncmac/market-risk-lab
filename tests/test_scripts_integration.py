@@ -292,6 +292,64 @@ def test_run_calibration_is_deterministic_and_gate_passes(calib_short):
     (results / "model_p2.json").write_bytes(model_before)                       # 복구 (다른 테스트가 이 fixture 를 쓴다)
 
 
+def test_run_calibration_single_acceptance_table_warns_that_it_bypasses_2d(tmp_path):
+    """--acceptance-blocks 24|18 은 소유자 결정 #2d(두 사전 등록 표 교집합)를 우회한다 → 그 자체로 경고를 남기고,
+    산출물에 판정 근거(acceptance_blocks · require_tables)를 기록한다. 정본을 덮어썼는지 알 수 있어야 한다."""
+    from scripts import run_calibration as RC
+    results, docs = tmp_path / "results", tmp_path / "docs"
+    rc = RC.main(["--end", "2006-12-29", "--first-refit", "2003-01-02", "--acceptance-rule", "amended",
+                  "--acceptance-blocks", "24", "--results-dir", str(results), "--docs-dir", str(docs), "--no-charts"])
+    assert rc == 0
+    js = _strict_json(results / "summary_p2.json")
+    hits = [w for w in js["warnings"] if "#2d" in w]
+    assert hits, js["warnings"]
+    assert any("표 하나만으로 판정" in w and "배포용이 아니다" in w for w in hits), hits
+    assert js["run"]["acceptance_blocks"] == "24" and js["run"]["acceptance_require_tables"] == ["24"]
+    assert js["acceptance"]["require_tables"] == ["24"] and js["acceptance"]["conjunction"] is False
+    # 모델 파일도 근거를 들고 있다 (daily.py 의 model_p2.json 폴백 경로가 볼 수 있게)
+    m = _strict_json(results / "model_p2.json")
+    assert m["extra"]["acceptance_blocks"] == "24" and m["extra"]["acceptance_require_tables"] == ["24"]
+    # 기본값(both)은 교집합 경고를 남긴다
+    results2, docs2 = tmp_path / "results_both", tmp_path / "docs_both"
+    assert RC.main(["--end", "2006-12-29", "--first-refit", "2003-01-02", "--acceptance-rule", "amended",
+                    "--acceptance-blocks", "both", "--results-dir", str(results2), "--docs-dir", str(docs2), "--no-charts"]) == 0
+    js2 = _strict_json(results2 / "summary_p2.json")
+    assert any("교집합만 배치(장부 #2d" in w for w in js2["warnings"])
+    assert js2["run"]["acceptance_require_tables"] == ["24", "18"]
+
+
+def test_run_calibration_blocks_flag_only_cuts_ladder_rows(tmp_path):
+    """--blocks 는 사다리 표의 블록별 행만 자른다 — §6 배치 판정 표는 --acceptance-blocks 다.
+    그래서 run 키는 ladder_blocks 이고, 판정 근거는 acceptance_* / acceptance.primary_table 에 있다."""
+    from scripts import run_calibration as RC
+    results, docs = tmp_path / "results", tmp_path / "docs"
+    assert RC.main(["--end", "2006-12-29", "--first-refit", "2003-01-02", "--blocks", "18",
+                    "--results-dir", str(results), "--docs-dir", str(docs), "--no-charts"]) == 0
+    run = _strict_json(results / "summary_p2.json")["run"]
+    assert run["ladder_blocks"] == "18" and "primary_blocks" not in run
+    assert run["acceptance_blocks"] == "both" and run["acceptance_require_tables"] == ["24", "18"]
+
+
+def test_committed_summary_p2_reproduces_from_the_committed_cache():
+    """정본 산출물의 재현 가능성: data/ 캐시의 하드컷 지문 == results/summary_p2.json.run.data_sha256.
+    (일간 커밋이 캐시를 갈아엎고 주간 산출물만 남으면 장부 #2d 의 증거를 아무도 재현할 수 없다.)"""
+    from scripts import run_calibration as RC
+    from mrl.config import RESULTS_DIR
+    sp2 = RESULTS_DIR / "summary_p2.json"
+    if not sp2.exists():
+        pytest.skip("results/summary_p2.json 없음 (run_calibration.py 먼저)")
+    recorded = json.loads(sp2.read_text(encoding="utf-8"))["run"]["data_sha256"]
+    bundle = RC.load_cache(DATA_DIR)
+    end, _pre_last, _last_ok = RC.resolve_end(bundle, None, False)
+    b_cut = RC.cut_bundle(bundle, end)
+    inp = RC.prepare_inputs(b_cut, end)
+    got = RC._data_sha256(b_cut.spy_ohlc, inp["feats"]["vix"])
+    assert got == recorded, (f"data/ 캐시의 하드컷 지문 {got[:12]} ≠ summary_p2.json.run.data_sha256 {recorded[:12]} — "
+                             "커밋된 산출물이 커밋된 캐시에서 재현되지 않는다. "
+                             "run_calibration.py --acceptance-rule amended --acceptance-blocks both 를 다시 돌려 "
+                             "data/ 와 results/ 를 한 커밋에 함께 담아라")
+
+
 def test_run_calibration_refuses_holdout_without_final_flag_and_exit2_when_unlocked(tmp_path):
     """--end 가 HOLDOUT_START 이후면 SystemExit(1); --holdout-final 은 unlock 파일이 있으면 exit 2 (아무것도 쓰지 않음)."""
     from scripts import run_calibration as RC
@@ -608,10 +666,33 @@ def test_resolve_deployment_follows_acceptance_not_the_production_model():
     assert dep5["prob_rung"] == "M1" and dep5["source"] == "results/model_p2.json" and any("acceptance 가 없어" in x for x in w5)
 
 
+def test_resolve_deployment_refuses_a_single_table_verdict():
+    """소유자 결정 #2d: 요구 표가 24·18 두 표에 못 미치면 배포하지 않는다(민감도 실행이 정본을 덮어쓴 경우).
+    require_tables 키가 없는 옛 산출물은 예전 동작 그대로."""
+    from scripts import daily as DY
+    from mrl import calibrate as C
+    m3 = _logit("M3")
+    live = {"M1": _logit("M1").to_dict(), "M2": _logit("M2").to_dict(), "M3": m3.to_dict()}
+    w: list[str] = []
+    dep = DY.resolve_deployment({"deploy_mode": "tones", "tone_model": "M1", "require_tables": ["24"], "conjunction": False},
+                                m3, live, w)
+    assert dep["deployed"] is False and dep["deploy_mode"] == "info_only" and dep["tone_model"] is None
+    assert dep["prob_rung"] == "M3" and any("#2d" in x for x in w), w
+    # 두 표 모두 요구한 판정은 그대로 배포된다
+    w2: list[str] = []
+    dep2 = DY.resolve_deployment({"deploy_mode": "tones", "tone_model": "M1",
+                                  "require_tables": list(C.DEFAULT_REQUIRE_TABLES), "conjunction": True}, m3, live, w2)
+    assert dep2["deployed"] is True and dep2["prob_rung"] == "M1" and not any("#2d" in x for x in w2)
+    # require_tables 가 없으면(옛 산출물) 하위 호환 — 경고 없이 예전대로
+    w3: list[str] = []
+    dep3 = DY.resolve_deployment({"deploy_mode": "tones", "tone_model": "M1"}, m3, live, w3)
+    assert dep3["deployed"] is True and not any("#2d" in x for x in w3)
+
+
 @pytest.mark.parametrize("acc,rung,prefix,deployed", [
-    ({"deploy_mode": "tones", "tone_model": "M1"}, "M1", "p2m1-", True),
-    ({"deploy_mode": "tones", "tone_model": "M3"}, "M3", "p2m3-", True),
-    ({"deploy_mode": "info_only", "tone_model": None}, "M3", "p2m3-", False),
+    ({"deploy_mode": "tones", "tone_model": "M1", "verdict_line": "합성 판정: M1 배치(tones)"}, "M1", "p2m1-", True),
+    ({"deploy_mode": "tones", "tone_model": "M3", "verdict_line": "합성 판정: M3 배치(tones)"}, "M3", "p2m3-", True),
+    ({"deploy_mode": "info_only", "tone_model": None, "verdict_line": "합성 판정: 배치 없음(정보 제공 전용)"}, "M3", "p2m3-", False),
 ])
 def test_daily_ledger_and_card_use_deployed_probability(tmp_path, acc, rung, prefix, deployed):
     """장부의 prob_dd5_20·p2_r·p2_state 와 카드 헤드라인은 배치된 단의 확률이다. 배포되지 않은 단은 사다리 열에 정보로만.
@@ -650,6 +731,7 @@ def test_daily_ledger_and_card_use_deployed_probability(tmp_path, acc, rung, pre
     i0 = html.index('id="p2"')                                                   # v0 판정·장부 블록은 그대로 두고 P2 카드만 본다
     card = html[i0:html.index("<section", i0)]
     assert f"이런 날 {report_nat_freq(p)}" in card                                # 헤드라인 = 배포 확률
+    assert acc["verdict_line"] in _visible_text(card)                            # 카드가 배치 판정을 그대로 적는다
     if deployed:
         assert f"톤 적용 — {rung} 배포" in card and "주식 비중" in card
         if rung != "M3":
@@ -657,6 +739,61 @@ def test_daily_ledger_and_card_use_deployed_probability(tmp_path, acc, rung, pre
     else:
         assert "정보 표시(배포 안 함)" in card and "주식 비중" not in card
         assert 'class="pill"' not in card and "배포된 단이 없습니다" in _visible_text(card)
+        # 배치 주장 자체가 없다 — '톤 적용' 태그도, tone_model 표기도 없고, 정직 스트립이 그렇게 말한다
+        assert "톤 적용" not in card and "tone_model M" not in card
+        assert "배포된 단 없음 — 톤·비중 주장 없음" in _visible_text(card)
+
+
+CONJUNCTIVE_INFO_ONLY_ACC = {
+    "rule": "amended", "candidate": "M3", "require_tables": ["24", "18"], "primary_table": "24", "conjunction": True,
+    "deploy_mode": "info_only", "tone_model": None, "blocking_tables": ["18"],
+    "verdict_line": ("24개월 표: M1 통과 · 18개월 표: 실패(최소 블록 BSS_clim −0.0996) → 두 표 모두 통과 요구"
+                     "(소유자 결정 2026-09-08) → 배치 없음(정보 제공 전용)"),
+    "conjunction_note": "배치는 require_tables ['24', '18'] 전부에서 통과한 단만 — 소유자 결정 2026-09-08(장부 #2d)",
+    "per_table": {"24": {"tone_model": "M1", "deploy_mode": "tones", "passing_rungs": ["M1"], "required": True,
+                         "n_blocks": 11, "min_pass_blocks": 8},
+                  "18": {"tone_model": None, "deploy_mode": "info_only", "passing_rungs": [], "required": True,
+                         "n_blocks": 14, "min_pass_blocks": 11}},
+}
+
+
+def test_daily_card_states_the_conjunctive_verdict_and_claims_no_tone(tmp_path):
+    """두 사전 등록 표의 교집합(장부 #2d)으로 배치가 없으면, 카드는 두 표의 판정과 결론을 그대로 적고
+    톤 pill·주식 비중·tone_model 주장을 하지 않는다(info_only 렌더 경로가 라이브 경로다)."""
+    import shutil
+    from scripts import daily as DY
+    from mrl.config import RESULTS_DIR
+    if not (RESULTS_DIR / "model_p2.json").exists() or not (RESULTS_DIR / "summary_p2.json").exists():
+        pytest.skip("results/model_p2.json · summary_p2.json 없음 (run_calibration.py 먼저)")
+    results = tmp_path / "results"
+    results.mkdir()
+    for name in ("model_p2.json", "summary_p2.json"):
+        shutil.copy(RESULTS_DIR / name, results / name)
+    sp = json.loads((results / "summary_p2.json").read_text(encoding="utf-8"))
+    sp["acceptance"] = {**(sp.get("acceptance") or {}), **CONJUNCTIVE_INFO_ONLY_ACC}
+    (results / "summary_p2.json").write_text(json.dumps(sp, ensure_ascii=False), encoding="utf-8")
+    ledger, docs = tmp_path / "track_record.csv", tmp_path / "docs"
+    spy = pd.read_csv(DATA_DIR / "spy_ohlc.csv", index_col="date", parse_dates=["date"])
+    now = f"{spy.index[-1]:%Y-%m-%d} 17:00"
+    assert DY.main(["--no-update", "--now", now, "--ledger", str(ledger), "--docs-dir", str(docs),
+                    "--results-dir", str(results)]) == 0
+    html = (docs / "index.html").read_text(encoding="utf-8")
+    i0 = html.index('id="p2"')
+    card = html[i0:html.index("<section", i0)]
+    txt = _visible_text(card)
+    assert not BAD_TOKEN.search(_visible_text(html)), BAD_TOKEN.findall(_visible_text(html))[:5]
+    # ① 두 표의 판정과 최종 결론이 카드에 그대로 있다
+    assert CONJUNCTIVE_INFO_ONLY_ACC["verdict_line"] in txt
+    assert "24개월 표: M1 통과" in txt and "18개월 표: 실패(최소 블록 BSS_clim −0.0996)" in txt
+    assert "두 표 모두 통과 요구(소유자 결정 2026-09-08)" in txt and "배치 없음(정보 제공 전용)" in txt
+    # ② 배치 주장은 어디에도 없다
+    assert "톤 적용" not in card and "주식 비중" not in card and "tone_model M" not in card
+    assert 'class="pill"' not in card                                     # 톤 pill 없음
+    assert "정보 표시(배포 안 함)" in txt and "시험 운용 — 비중 제안 아님" in txt
+    assert "배포된 단이 없습니다" in txt and "배포된 단 없음 — 톤·비중 주장 없음" in txt
+    # ③ 장부에도 배치 없음이 기록된다
+    row = pd.read_csv(ledger).iloc[0]
+    assert row["p2_deploy_mode"] == "info_only" and pd.isna(row["p2_tone_model"])
 
 
 def report_nat_freq(p: float) -> str:

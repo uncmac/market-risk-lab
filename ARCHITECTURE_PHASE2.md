@@ -220,7 +220,7 @@ def parameter_band(models_last5: list[LogitModel], x: pd.Series) -> tuple[float,
 * 홀드아웃: 2024-09-03 ~ 마지막 완성 세션(현재 2026-09-04; 504세션, 라벨 484행, 기저율 12.0%). `--holdout-final` 1회만.
 * 라이브 계수(홀드아웃 검증 전): 홀드아웃 직전까지의 퍼지된 전 자료(학습 마지막 행 = 2024-08-30 의 21세션 전 ≈ 2024-08-01)로 적합한 모델을 `model_p2.json` 에 둔다(`refit_date="2024-08-30"`). 홀드아웃 검증(#2b)이 장부에 기록된 뒤부터는 매년 1월 재적합이 전 자료를 포함한다.
 
-### 8.2 블록 (24개월 주, 18개월 민감도; SPY 세션 실측)
+### 8.2 블록 (24·18개월 두 사전 등록 표 — 배치 판정은 기본 두 표 모두(#2d), 1999 시작은 민감도; SPY 세션 실측)
 
 | # | BLOCKS_24 | 첫/마지막 세션 | n | 양성(캐시 2026-09-04) |
 |---|---|---|---|---|
@@ -344,7 +344,7 @@ def charts_p2(oos, blocks, summary_p2, spy_close) -> dict[str, bytes]     # 신�
 
 ## 13. 스크립트
 
-* `scripts/run_calibration.py [--end (기본: HOLDOUT_START 직전 세션)] [--first-refit 2003-01-02|1999-01-04] [--blocks 24|18] [--har-train-start 1993-03-03|1996-01-02] [--holdout-final] [--results-dir] [--docs-dir]`
+* `scripts/run_calibration.py [--end (기본: HOLDOUT_START 직전 세션)] [--first-refit 2003-01-02|1999-01-04] [--acceptance-rule literal|amended] [--acceptance-blocks 24|18|both (기본 both — §6 배치 판정 표)] [--blocks 24|18 (사다리 블록 행만)] [--har-train-start 1993-03-03|1996-01-02] [--holdout-final] [--results-dir] [--docs-dir]`
   흐름: `load_cache → apply_guards → 완성 봉 자르기 → 하드컷(--end) → build_features → make_targets → episodes(0.20) → first_refit_ok(assert) → walk_forward(사다리+소거) → block_scores(24·18·1999) → ladder_table → reliability/murphy/era_auc → acceptance → har_walk_forward+vol_scorecard → v0_reference(results/backtest_v0_completed.csv 의 run.window_rule·signals_v0_sha256 이 현재 코드와 같을 때만; 아니면 참조선 생략+경고)`.
   산출: `results/calib_p2_walkforward.csv`(date, y, clim, p_vix, p_vix_driftless, p_vix_bgk, p_m1, p_m2, p_m3, p_m3_pk, p_m3_har96, p_v0ref, har_fc_20, refit_year, block24, block18), `results/summary_p2.json`(run{generated_at_utc, end, first_refit, spec_sha256, feature_rule, python/pandas/numpy/sklearn, cache}, v0_reference, ladder, blocks24/18/from1999, reliability, murphy, era_auc, acceptance, params_by_refit, har, selftest, warnings, disclosure="#2 사전 관측 참조"), `results/model_p2.json`(라이브 계수 + deploy_mode/tone_model = acceptance 결과), `docs/calibration_p2.html`.
   `--holdout-final`: `HOLDOUT_UNLOCK_PATH` 가 존재하면 즉시 비정상 종료(exit 2). 없으면 하드컷 없이 2024-09-03~ 를 R_2024·R_2025·R_2026 재적합(각각 자기 재적합일 전 퍼지 자료로만 학습)으로 채점해 `summary_p2.json.holdout` 에 기록하고 `holdout_unlock.json{timestamp_utc, git_sha, spec_sha256, ledger_entry:"2b", n, n_pos, bss_clim, bss_vix, bss_m1, ci}` 를 쓴다. `--force` 류 옵션은 없다.
