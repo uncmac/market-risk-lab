@@ -1,10 +1,23 @@
-# 매주 일요일 보정 작업 — 캐시 전량 재구축(build_cache.py) → v0 백테스트(run_backtest_v0.py --variant both) → 커밋
+# 매주 일요일 보정 작업 — 캐시 전량 재구축(build_cache.py) → v0 백테스트(run_backtest_v0.py --variant both)
+#                      → Phase 2 보정(run_calibration.py) → 결정층 v1(run_backtest_v1.py --all-configs) → 커밋
 #
 #   * 13:00 UTC 일요일 = 09:00 EDT / 08:00 EST. 시장이 닫혀 있어 완성 봉만 존재한다.
 #   * 가격 캐시는 증분 append 가 아니라 전량 재다운로드(자동조정 재계산 때문, ARCHITECTURE.md 디렉터리 절).
 #     fg_history / spy_eod / cboe 는 append — 원천이 과거를 다시 주지 않는다.
 #   * daily.yml 과 같은 concurrency 그룹이라 두 워크플로가 동시에 커밋하지 않는다.
-#   * 수동 실행 시 variant 를 고를 수 있다(기본 both). Phase 2 에서는 보정 작업 단계가 여기에 추가된다.
+#   * 수동 실행 시 variant 를 고를 수 있다(기본 both).
+#
+#   Phase 2 (ARCHITECTURE_PHASE2.md §14)
+#   * run_calibration.py 는 --holdout-final 없이 실행한다 → 모든 입력 프레임을 HOLDOUT_START(2024-09-01) 직전 세션에서 하드컷.
+#     --holdout-final 은 워크플로에 넣지 않는다(로컬 1회 수동, 커밋 메시지 `holdout-final: 2b`).
+#   * 결정론 게이트: run_calibration.py 가 새로 적합한 라이브 계수를 기존 results/model_p2.json 과 비교한다.
+#       - 입력 데이터 지문(SPY OHLC + VIX)이 같고 계수 차 > 1e-9 → exit 1 (파일을 쓰지 않음) → 이 잡은 커밋 단계에 이르지 못한다.
+#       - 지문이 다르면(캐시 재구축의 배당 재조정 등) 비교는 결정론 검사가 아니므로 이동 폭을 summary_p2.json.determinism 에 기록·경고하고
+#         새 파일을 쓴다(실측: Yahoo 재다운로드의 배당 조정계수 반올림만으로 SPY 상대 ~1.5e-6 → 계수 ~9e-6 이동; CSV 반올림만이면 ~2e-8).
+#         1e-4 를 넘으면 '데이터 수정 의심' 경고 → 장부 검토 대상 (손으로 고친 자료는 ≥1e-3 움직인다 — run_calibration.COEF_DRIFT_MATERIAL).
+#       - spec_sha256(features/vol/model 소스) 이 다르면 코드 변경 → 새 파일 + run.spec_changed=true + 장부 기재 요구 로그.
+#   * 어느 단계든 실패하면 커밋 단계에 이르지 못한다(조용한 실패 금지). timeout-minutes: 60 유지.
+#   * 예산(ubuntu 러너): run_calibration.py < 2분(로컬 실측 ~11초), run_backtest_v1.py < 30초(로컬 ~15초).
 name: weekly
 
 on:
@@ -35,7 +48,7 @@ env:
 
 jobs:
   rebuild:
-    name: 캐시 재구축 + v0 백테스트 + 커밋
+    name: 캐시 재구축 + v0 백테스트 + Phase 2 보정·결정층 + 커밋
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -60,6 +73,32 @@ jobs:
         env:
           VARIANT: ${{ github.event.inputs.variant || 'both' }}
         run: python scripts/run_backtest_v0.py --variant "${VARIANT}"
+
+      - name: scripts/run_calibration.py (특징 → walk-forward 사다리 → 검정 → HAR-RV → results/ + docs/calibration_p2.html; 라이브 계수 결정론 검사)
+        # 하드컷(--holdout-final 없음). 결정론 검사 실패(exit 1)면 여기서 멈추고 아래 단계·커밋은 실행되지 않는다.
+        # --acceptance-rule amended: VALIDATION §8 실험 #2a 경로 (b) — 소유자 결정 2026-09-08 (post hoc, 장부 기재됨).
+        run: python scripts/run_calibration.py --acceptance-rule amended
+
+      - name: scripts/run_backtest_v1.py (결정층 → 톤 → v0 와 같은 성적표 → results/ + docs/backtest_v1.html)
+        run: python scripts/run_backtest_v1.py --all-configs
+
+      - name: 결정론 게이트 확인 (summary_p2.json.determinism.ok 가 true 가 아니면 커밋하지 않는다)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'EOF'
+          import json, sys
+          s = json.load(open("results/summary_p2.json", encoding="utf-8"))
+          d = s.get("determinism") or {}
+          print("determinism:", d.get("status"), "|", d.get("note"))
+          if d.get("ok") is not True:
+              print("::error::결정론 검사 실패 — 커밋하지 않는다")
+              sys.exit(1)
+          if d.get("material_drift"):
+              print(f"::warning::입력 데이터 변경으로 계수가 {d.get('max_abs_diff'):.2e} 이동(허용 재조정 수준 1e-4 초과) — VALIDATION.md §8 장부 검토 대상")
+          if s.get("run", {}).get("spec_changed"):
+              print("::warning::spec_sha256 변경(코드 변경) — 장부(VALIDATION.md §8)에 기재하라")
+          EOF
 
       - name: data/ docs/ results/ 커밋 및 푸시
         shell: bash
