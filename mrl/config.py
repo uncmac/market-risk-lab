@@ -90,3 +90,43 @@ HOLDOUT_START = "2024-09-01"      # 최종 검증 전까지 손대지 않는 구
 ET = "America/New_York"
 CT = "America/Chicago"
 SITE_URL = "https://uncmac.github.io/market-risk-lab/"
+
+# ------------------------------------------------------------------
+# Phase 2 — 보정 모델 p2 / 결정층 v1 (ARCHITECTURE_PHASE2.md §3; v0 블록 불변)
+# ------------------------------------------------------------------
+P2 = {
+    "dd": 0.05, "h": 20,                                  # = DD_TARGETS["y_dd5_20"]
+    "features": ("x_vix", "x_har", "x_ma"),
+    "har_lookbacks": (1, 5, 22), "har_weights": (1/3, 1/3, 1/3), "var_floor": 1e-8,   # (1bp 일변동)^2
+    "ma_window": V0["ma_window"],                         # 180 — v0 와 같은 창(새 상수 없음)
+    "vix_ffill_limit": 3,                                 # SPY 세션에 VIX 없으면 ≤3세션 ffill, 초과 시 NaN
+    "C": 1.0, "purge": 20, "train_start": "1993-10-14",
+    "first_refit": "2003-01-02", "first_refit_sensitivity": "1999-01-04",
+    "first_refit_rule": {"min_rows": 2000, "min_episode_depth": 0.20},
+    "boot_block": 40, "n_boot": 4000, "hac_lag": 19, "phase_offsets": 20,
+    "reliability_bins": (0.0, 0.08, 0.12, 0.16, 0.20, 0.25, 0.30, 0.40, 0.50, 1.0),
+    "n_eff_div": 20, "param_band_refits": 5,
+    "budget": 5, "param_count": 4,
+    "eras": (("1993-01-29", "1999-12-31"), ("2000-01-01", "2007-12-31"), ("2008-01-01", "2012-12-31"),
+             ("2013-01-01", "2019-12-31"), ("2020-01-01", "2024-08-30")),
+    "har_train_start_sensitivity": "1996-01-02",
+}
+# 평가 블록 (달력 경계, [a, b) 반개구간; 세션은 SPY 인덱스로 결정) — §7
+BLOCKS_24 = [("2003-01-01", "2005-01-01"), ("2005-01-01", "2007-01-01"), ("2007-01-01", "2009-01-01"),
+             ("2009-01-01", "2011-01-01"), ("2011-01-01", "2013-01-01"), ("2013-01-01", "2015-01-01"),
+             ("2015-01-01", "2017-01-01"), ("2017-01-01", "2019-01-01"), ("2019-01-01", "2021-01-01"),
+             ("2021-01-01", "2023-01-01"), ("2023-01-01", HOLDOUT_START)]                      # 11개, 마지막 20개월
+BLOCKS_18 = [("2003-01-01", "2004-07-01"), ("2004-07-01", "2006-01-01"), ("2006-01-01", "2007-07-01"),
+             ("2007-07-01", "2009-01-01"), ("2009-01-01", "2010-07-01"), ("2010-07-01", "2012-01-01"),
+             ("2012-01-01", "2013-07-01"), ("2013-07-01", "2015-01-01"), ("2015-01-01", "2016-07-01"),
+             ("2016-07-01", "2018-01-01"), ("2018-01-01", "2019-09-01"), ("2019-09-01", "2021-05-01"),
+             ("2021-05-01", "2023-01-01"), ("2023-01-01", HOLDOUT_START)]                      # 14개: 18개월×10 + 20개월×4
+BLOCKS_24_FROM_1999 = [("1999-01-01", "2001-01-01"), ("2001-01-01", "2003-01-01")] + BLOCKS_24  # 13개(민감도)
+DECISION_P2 = {"enter_caution": 1.5, "exit_caution": 1.2, "enter_reduce": 2.5, "exit_reduce": 2.0,
+               "dwell": 5, "churn_alert": 12, "kpi_max_switches_per_year": 12}
+DECISION_P2_SENSITIVITY = {"wide": {"enter_caution": 1.75, "exit_caution": 1.25, "enter_reduce": 3.0, "exit_reduce": 2.25},
+                           "symmetric_dwell": {"dwell_escalate": 5}, "no_dwell": {"dwell": 0}}
+P2_STATES = ("normal", "caution", "reduce")
+STATE_TO_TONE = {"normal": "hold", "caution": "caution", "reduce": "reduce"}   # TONE_EXPOSURE 그대로 재사용
+MODEL_P2_PATH = RESULTS_DIR / "model_p2.json"
+HOLDOUT_UNLOCK_PATH = RESULTS_DIR / "holdout_unlock.json"
