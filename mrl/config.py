@@ -130,3 +130,64 @@ P2_STATES = ("normal", "caution", "reduce")
 STATE_TO_TONE = {"normal": "hold", "caution": "caution", "reduce": "reduce"}   # TONE_EXPOSURE 그대로 재사용
 MODEL_P2_PATH = RESULTS_DIR / "model_p2.json"
 HOLDOUT_UNLOCK_PATH = RESULTS_DIR / "holdout_unlock.json"
+
+# ------------------------------------------------------------------
+# Phase 3 — 비중 p3 / 그림자 등록부 / 킬룰 (ARCHITECTURE_PHASE3.md §3; v0·P2 블록 불변)
+# ------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Phase 3 — 비중 p3 / 그림자 등록부 / 킬룰 (ARCHITECTURE_PHASE3.md §3; v0·P2 블록 불변)
+# ------------------------------------------------------------------
+P3 = {
+    "sigma_model": "ewma", "ewma_lambda": 0.94, "ewma_seed_sessions": 60,   # RiskMetrics 상수 — 적합 아님
+    "sigma_sensitivity": "har_fc_20",                                        # 적합 HAR 예측은 표시·민감도 S-HAR 전용
+    "k_slow": 3.5, "k_fast": 2.0,                                            # σ_T = D_max/k_slow (헤드라인) ; k_fast 는 낙관선 병기
+    "vol_grid": (0.06, 0.08, 0.10, 0.12, 0.15),                              # σ_T 격자 (내림)
+    "d_max_default": 0.35,                                                   # 기본 가족 예산 → σ_T 10%
+    "w_min": 0.25, "w_max": 1.0, "grid": 0.05, "band": 0.10,                 # 바닥/상한/격자/무거래 밴드
+    "floor_after_multiplier": True,                                          # 곱 뒤 [w_min, w_max] 재클립
+    "cadence": "weekly", "escalate_immediately": True,                       # 주 마지막 세션 점검 + 결정층 격상 시 즉시 하향
+    "cost_bps": 5, "cash_return": 0.0,
+    "eval_start": "2003-01-02", "vol_only_start": "1993-10-14", "v0_start": BACKTEST_START,
+    "reference_windows": (63, 126, 252, 756), "churn_ceiling": 24,          # 비중 변경 상한(252세션)
+}
+HMM_P3 = {
+    "obs": ("r100", "ln_rv10"), "rv_window": 10, "k_states": 2, "cov": "full",
+    "init_A": ((0.98, 0.02), (0.05, 0.95)), "tol": 1e-6, "max_iter_first": 300, "max_iter_refit": 100,
+    "cov_jitter": 1e-6, "clip": 1e-4, "param_count": 12,                     # μ 2×2 + Σ 2×3 + A 2 (π = 정상분포, 자유도 0)
+    "guard": {"p_min": 0.90, "p_max": 0.999, "gap_lnvol": 0.3, "occ_min": 0.05},
+    "turn_h": 20, "platt_C": 1.0, "train_start": P2["train_start"], "purge": P2["purge"],
+    "first_refit": P2["first_refit"], "tol_theta": 1e-7, "tol_prob": 1e-7,
+}
+ENSEMBLE_P3 = {
+    "members": ("p2", "M1", "H"), "member_order": ("H", "M1"),               # 채택 검정 순서(고정, 재배열 금지)
+    "fresh_block_months": 3, "fresh_blocks_min": 11, "admit_frac": 8 / 11, "reeval_every_blocks": 4,
+    "disagree_flag": {"width": 0.20, "sessions": 5}, "K_s_cap": 12, "K_u_cap": 15,
+}
+KILL_P3 = {
+    "min_months": 36, "min_episodes": 8, "max_months": 60, "reeval_months": 12,     # 2단계(§8.4)
+    "block": P2["boot_block"], "n_boot": P2["n_boot"], "seed": 0, "ci": 0.95,
+    "dd": 0.05, "confirm_sessions": 20, "target": "y_dd5_20", "reference": "p2_clim", "criterion": "point",
+    "rearm": {"min_months": 12, "ci_lo_gt": 0.0},                            # 복귀: 새 장부 항목 + 전체 라이브 창 CI 하한 > 0
+}
+P3_DRIFT = {                                                                 # 임계 = 2003~24 참조분포 p5/p95 (post hoc; 라이브로 재조정 금지)
+    "D1_p_level": {"window": 120, "lo": 0.04, "hi": 0.35},
+    "D2_bss": {"red": {"window": 756, "lt": -0.05}, "yellow": {"window": 252, "lt": -0.10}},
+    "D3_vol_fc": {"window": 60, "har_log_mae_gt": 0.50, "ewma_bias": (-0.35, 0.35)},
+    "D4_vol_target": {"window": 60, "ratio_gt": 1.5}, "D4b_budget": True,
+    "D5_stuck": {"window": 252, "warn_occ_gt": 0.75, "avg_w_lt": 0.30},
+    "D6_churn": {"window": 252, "gt": 24},
+    "D7_parity": {"sessions": 20, "dp_gt": 0.01},                             # exit 1
+    "D8_coverage": {"min_n_eff": 12, "hit_lt": 0.5},
+    "D9_hmm": {"window": 756, "auc_lt": 0.5},
+    "D10_replay": {"dp_gt": 1e-6},                                            # 주간 재현(코드·자료 개정 탐지)
+    "D11_feature_range": {"sessions": 5},                                     # x_vix·x_har·x_ma·x_hmm 가 1993~2024 범위 밖
+}
+SCENARIO_P3 = {"bins": P2["reliability_bins"], "min_n_eff": 20, "n_eff_div": P2["n_eff_div"], "episode_split": False,
+               "h": P2["h"], "z": {"1s": 1.0, "80": 1.2816, "90": 1.645}, "dd_levels": (0.05, 0.10, 0.15, 0.20)}
+P3_DEPLOY_MODES = ("info_only", "tones")                                     # p2 와 같은 두 값; 유효 모드 = 둘의 AND
+MODEL_P3_PATH = RESULTS_DIR / "model_p3.json"
+HMM_P3_PATH = RESULTS_DIR / "hmm_p3.json"
+KILL_RECORD_PATH = RESULTS_DIR / "kill_record.json"
+KILL_MANUAL_PATH = RESULTS_DIR / "kill_manual.json"
+ALARMS_PATH = RESULTS_DIR / "alarms.csv"
+TRACK_P3_PATH = RESULTS_DIR / "track_record_p3.json"
