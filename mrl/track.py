@@ -1521,7 +1521,8 @@ def live_panel(ledger: pd.DataFrame, spy_close, reference: dict | None, asof, *,
            "hist_pct": {str(L): hist_pct(sc.get("bss_clim"), L, reference or {})
                         for L in P3["reference_windows"]},
            "backtest_quantiles": _ref(reference, "quantiles", default={})}
-    vii = _redact(vii, stage, ("brier", "bss", "ci", "hist_pct"))
+    # "ci_label" 을 후보로 주지 않으면 6m·12m 에서 판정어가 그대로 나간다(0-3m 은 "ci" 접두사에 우연히 걸릴 뿐).
+    vii = _redact(vii, stage, ("brier", "bss", "ci", "hist_pct", "ci_label"))
     # (viii) 규칙 vs 보유
     rr, bh = _col("rule_ret_20"), _col("bh_ret_20")
     viii = {"n": int(min(len(rr), len(bh))),

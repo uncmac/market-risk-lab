@@ -102,7 +102,7 @@ jobs:
         name: scripts/daily.py (캐시 갱신 → 완성 봉 판정 → 장부 → docs/index.html; 출력 asof/market_status/appended)
         run: python scripts/daily.py
 
-      - name: data/ docs/ results/ 커밋 및 푸시
+      - name: docs/ results/ 커밋 및 푸시 (data/ 는 주간 실행 전용)
         env:
           # 게이트의 정확 일치 grep(-x)은 `daily: <날짜>` 만 인식한다 — 오늘 세션을 기록한 실행(current)만 그 제목을 쓴다.
           COMMIT_MSG: "${{ steps.daily.outputs.market_status == 'current' && format('daily: {0}', needs.gate.outputs.today_et) || format('daily({0}): {1}', steps.daily.outputs.market_status || 'unknown', needs.gate.outputs.today_et) }}"
@@ -111,17 +111,16 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # 캐시의 하드컷 지문(_data_sha256)이 덮는 두 프레임(data/close.csv · data/spy_ohlc.csv)은 매일 커밋하지 않는다.
-          # update_daily 가 가격을 전량 재다운로드하므로 매일 지문이 바뀌는데, results/summary_p2.json 은 주간 실행에서만
-          # 갱신된다 → 매일 커밋하면 트리가 구조적으로 자기모순이 된다(장부 #2d 증거를 재현할 수 없다).
-          # 이 두 파일은 주간 실행(summary_p2.json 을 함께 다시 쓰는 실행)에서만 커밋된다.
-          for d in data docs results; do
+          # 캐시(data/)는 하나의 정합 단위라 부분 커밋이 불가능하다: meta.spy_last 가드(mrl/data.py)와
+          # 유령 행·가드 안정성 검사가 close.csv·spy_ohlc.csv 와 묶여 있어, 일부만 커밋한 트리는 load_cache 가
+          # RuntimeError 로 거부한다(selftest · 주간 보정·백테스트·Phase 3 산출 · daily --no-update 가 전부 실패).
+          # 또 update_daily 는 가격을 전량 재다운로드해 하드컷 지문(_data_sha256)이 매일 바뀌는데
+          # results/summary_p2.json 은 주간 실행에서만 갱신된다 → 매일 커밋하면 장부 #2d 증거를 재현할 수 없다.
+          # 따라서 data/ 는 build_cache.py 와 summary_p2.json 을 함께 다시 쓰는 주간 실행에서만 통째로 커밋한다.
+          for d in docs results; do
             if [ -d "$d" ]; then
               git add -A -- "$d"
             fi
-          done
-          for f in data/close.csv data/spy_ohlc.csv; do
-            git restore --staged -- "$f" 2>/dev/null || git reset -q HEAD -- "$f" || true
           done
           if git diff --cached --quiet; then
             echo "변경 없음 — 커밋 생략"

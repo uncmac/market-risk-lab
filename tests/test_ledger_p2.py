@@ -69,10 +69,13 @@ def _p2_flat(p=0.21, state="caution", **kw) -> dict:
 # 스키마
 # ------------------------------------------------------------------
 def test_schema_v2_columns_append_after_v1_in_contract_order():
-    assert ledger.SCHEMA_VERSION == 2                                  # 새 열은 덧붙이기만 — 3 은 Phase 3 예약
+    # Phase 3 가 도착해 예약된 3 을 썼다(ARCHITECTURE_PHASE3.md §9). P2 열의 순서·이름·의미는 그대로이고
+    # 새 열은 그 뒤에만 붙는다 — 아래 두 줄이 그것을 계속 고정한다.
+    assert ledger.SCHEMA_VERSION == 3
     assert ledger.LEDGER_COLUMNS_V1 == V1_COLUMNS                      # 기존 열 순서 불변
     assert ledger.P2_COLUMNS == CONTRACT_P2 + ADDED_P2                 # §12 고정 순서 + 뒤에 덧붙인 두 열
-    assert ledger.LEDGER_COLUMNS == V1_COLUMNS + CONTRACT_P2 + ADDED_P2
+    assert ledger.LEDGER_COLUMNS_V2 == V1_COLUMNS + CONTRACT_P2 + ADDED_P2
+    assert ledger.LEDGER_COLUMNS[:len(ledger.LEDGER_COLUMNS_V2)] == ledger.LEDGER_COLUMNS_V2
     assert "prob_dd5_20" in ledger.LEDGER_COLUMNS_V1 and "prob_dd5_20" not in ledger.P2_COLUMNS   # 기존 예약 열 = 배포 확률
     assert set(ledger.P2_STRING_COLUMNS) <= set(CONTRACT_P2 + ADDED_P2)
     assert "p2_prob_model_id" in ledger.P2_STRING_COLUMNS and "p2_p_m3" in ledger.P2_PROB_COLUMNS
@@ -210,7 +213,7 @@ def test_summary_p2_live_brier_matches_hand_calculation(tmp_path):
     assert not np.isnan(y).any() and y.sum() >= 5                      # 급락 앞 20일이 양성
     s = ledger.summary(path, trading_days=idx, spy_close=spy)
     p2 = s["p2"]
-    assert p2["schema_version"] == 2 and p2["variant_used"] == "completed" and p2["n_rows"] == 61
+    assert p2["schema_version"] == 3 and p2["variant_used"] == "completed" and p2["n_rows"] == 61
     assert p2["n_scored"] == n_rows and p2["n_blocks"] == n_rows // 20
     p = np.array(p_list)
     brier = float(np.mean((p - y) ** 2))

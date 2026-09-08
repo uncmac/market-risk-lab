@@ -1,0 +1,445 @@
+{
+ "schema_version": 1,
+ "registry_sha": "5aef315bc003447f6d6aeb0d9853c6a79d36cb3216dcabe2492f2515c0675730",
+ "sizing_sha": "c5d35fcc86113005699e56e64cf357947a08a7600f5b5d0154cd27c6b1406329",
+ "deploy_mode": "tones",
+ "deploy_sizing": true,
+ "members": {
+  "p2": {
+   "status": "seed",
+   "K_s": 4,
+   "K_u": 0,
+   "ledger_no": "#2",
+   "source": "prob_dd5_20",
+   "admission": null
+  },
+  "M1": {
+   "status": "shadow",
+   "K_s": 2,
+   "K_u": 0,
+   "ledger_no": "#8",
+   "source": "p2_p_m1",
+   "admission": {
+    "candidate": "M1",
+    "admitted": [
+     "p2"
+    ],
+    "evidence": "observed",
+    "wins": 5,
+    "n_blocks": 11,
+    "need": 8,
+    "frac": 0.7272727272727273,
+    "min_blocks": 11,
+    "per_block": [
+     -3.5337281956462214,
+     6.935004414279355,
+     -25.08038458247985,
+     -17.578467246383013,
+     -2.302562063636049,
+     1.5598435647856679,
+     8.532999161209448,
+     -10.461335993011412,
+     11.281411279232822,
+     -22.801766797396482,
+     1.972062555222337
+    ],
+    "blocks_detail": [
+     {
+      "block": 1,
+      "start": "2003-01-01",
+      "end": "2005-01-01",
+      "n": 504,
+      "dbrier_1e4": -3.5337281956462214,
+      "win": false,
+      "available": true,
+      "brier_base": 0.06095377300112055,
+      "brier_with": 0.06130714582068517
+     },
+     {
+      "block": 2,
+      "start": "2005-01-01",
+      "end": "2007-01-01",
+      "n": 503,
+      "dbrier_1e4": 6.935004414279355,
+      "win": true,
+      "available": true,
+      "brier_base": 0.01761657237740801,
+      "brier_with": 0.016923071935980076
+     },
+     {
+      "block": 3,
+      "start": "2007-01-01",
+      "end": "2009-01-01",
+      "n": 504,
+      "dbrier_1e4": -25.08038458247985,
+      "win": false,
+      "available": true,
+      "brier_base": 0.2414325490190128,
+      "brier_with": 0.24394058747726077
+     },
+     {
+      "block": 4,
+      "start": "2009-01-01",
+      "end": "2011-01-01",
+      "n": 504,
+      "dbrier_1e4": -17.578467246383013,
+      "win": false,
+      "available": true,
+      "brier_base": 0.17235427248535842,
+      "brier_with": 0.17411211920999672
+     },
+     {
+      "block": 5,
+      "start": "2011-01-01",
+      "end": "2013-01-01",
+      "n": 502,
+      "dbrier_1e4": -2.302562063636049,
+      "win": false,
+      "available": true,
+      "brier_base": 0.14469292227778283,
+      "brier_with": 0.14492317848414643
+     },
+     {
+      "block": 6,
+      "start": "2013-01-01",
+      "end": "2015-01-01",
+      "n": 504,
+      "dbrier_1e4": 1.5598435647856679,
+      "win": true,
+      "available": true,
+      "brier_base": 0.05294553599419221,
+      "brier_with": 0.05278955163771364
+     },
+     {
+      "block": 7,
+      "start": "2015-01-01",
+      "end": "2017-01-01",
+      "n": 504,
+      "dbrier_1e4": 8.532999161209448,
+      "win": true,
+      "available": true,
+      "brier_base": 0.09239307645966838,
+      "brier_with": 0.09153977654354743
+     },
+     {
+      "block": 8,
+      "start": "2017-01-01",
+      "end": "2019-01-01",
+      "n": 502,
+      "dbrier_1e4": -10.461335993011412,
+      "win": false,
+      "available": true,
+      "brier_base": 0.1293988468746853,
+      "brier_with": 0.13044498047398645
+     },
+     {
+      "block": 9,
+      "start": "2019-01-01",
+      "end": "2021-01-01",
+      "n": 505,
+      "dbrier_1e4": 11.281411279232822,
+      "win": true,
+      "available": true,
+      "brier_base": 0.13171392462998907,
+      "brier_with": 0.1305857835020658
+     },
+     {
+      "block": 10,
+      "start": "2021-01-01",
+      "end": "2023-01-01",
+      "n": 503,
+      "dbrier_1e4": -22.801766797396482,
+      "win": false,
+      "available": true,
+      "brier_base": 0.18541958852181292,
+      "brier_with": 0.18769976520155257
+     },
+     {
+      "block": 11,
+      "start": "2023-01-01",
+      "end": "2024-09-01",
+      "n": 398,
+      "dbrier_1e4": 1.972062555222337,
+      "win": true,
+      "available": true,
+      "brier_base": 0.09661420537710172,
+      "brier_with": 0.09641699912157949
+     }
+    ],
+    "pooled": -0.0004804110493024961,
+    "ci": {
+     "lo": -0.0013663207614562475,
+     "hi": 0.00036826483050257284
+    },
+    "no_harm": true,
+    "verdict": "SHADOW",
+    "verdict_raw": "SHADOW",
+    "admissible": false,
+    "reason": "observed_record_cannot_admit",
+    "n": 5433,
+    "first_session": "2003-01-02",
+    "last_session": "2024-08-02",
+    "block": 40,
+    "n_boot": 4000,
+    "seed": 0,
+    "registry_sha": "5aef315bc003447f6d6aeb0d9853c6a79d36cb3216dcabe2492f2515c0675730"
+   }
+  },
+  "H": {
+   "status": "shadow",
+   "K_s": 2,
+   "K_u": 12,
+   "ledger_no": "#3a",
+   "source": "platt(x_hmm)",
+   "admission": {
+    "candidate": "H",
+    "admitted": [
+     "p2"
+    ],
+    "evidence": "observed",
+    "wins": 6,
+    "n_blocks": 11,
+    "need": 8,
+    "frac": 0.7272727272727273,
+    "min_blocks": 11,
+    "per_block": [
+     -1.890013021547468,
+     -24.502026584927243,
+     -102.69377048922057,
+     29.760945068724176,
+     9.212381367167122,
+     -30.019218328078342,
+     9.685266511126056,
+     34.944531289078654,
+     28.765584344490335,
+     51.70306046097611,
+     -4.895600765540964
+    ],
+    "blocks_detail": [
+     {
+      "block": 1,
+      "start": "2003-01-01",
+      "end": "2005-01-01",
+      "n": 504,
+      "dbrier_1e4": -1.890013021547468,
+      "win": false,
+      "available": true,
+      "brier_base": 0.06095377300112055,
+      "brier_with": 0.0611427743032753
+     },
+     {
+      "block": 2,
+      "start": "2005-01-01",
+      "end": "2007-01-01",
+      "n": 503,
+      "dbrier_1e4": -24.502026584927243,
+      "win": false,
+      "available": true,
+      "brier_base": 0.01761657237740801,
+      "brier_with": 0.020066775035900736
+     },
+     {
+      "block": 3,
+      "start": "2007-01-01",
+      "end": "2009-01-01",
+      "n": 504,
+      "dbrier_1e4": -102.69377048922057,
+      "win": false,
+      "available": true,
+      "brier_base": 0.2414325490190128,
+      "brier_with": 0.25170192606793484
+     },
+     {
+      "block": 4,
+      "start": "2009-01-01",
+      "end": "2011-01-01",
+      "n": 504,
+      "dbrier_1e4": 29.760945068724176,
+      "win": true,
+      "available": true,
+      "brier_base": 0.17235427248535842,
+      "brier_with": 0.169378177978486
+     },
+     {
+      "block": 5,
+      "start": "2011-01-01",
+      "end": "2013-01-01",
+      "n": 502,
+      "dbrier_1e4": 9.212381367167122,
+      "win": true,
+      "available": true,
+      "brier_base": 0.14469292227778283,
+      "brier_with": 0.14377168414106611
+     },
+     {
+      "block": 6,
+      "start": "2013-01-01",
+      "end": "2015-01-01",
+      "n": 504,
+      "dbrier_1e4": -30.019218328078342,
+      "win": false,
+      "available": true,
+      "brier_base": 0.05294553599419221,
+      "brier_with": 0.055947457827000044
+     },
+     {
+      "block": 7,
+      "start": "2015-01-01",
+      "end": "2017-01-01",
+      "n": 504,
+      "dbrier_1e4": 9.685266511126056,
+      "win": true,
+      "available": true,
+      "brier_base": 0.09239307645966838,
+      "brier_with": 0.09142454980855577
+     },
+     {
+      "block": 8,
+      "start": "2017-01-01",
+      "end": "2019-01-01",
+      "n": 502,
+      "dbrier_1e4": 34.944531289078654,
+      "win": true,
+      "available": true,
+      "brier_base": 0.1293988468746853,
+      "brier_with": 0.12590439374577744
+     },
+     {
+      "block": 9,
+      "start": "2019-01-01",
+      "end": "2021-01-01",
+      "n": 505,
+      "dbrier_1e4": 28.765584344490335,
+      "win": true,
+      "available": true,
+      "brier_base": 0.13171392462998907,
+      "brier_with": 0.12883736619554004
+     },
+     {
+      "block": 10,
+      "start": "2021-01-01",
+      "end": "2023-01-01",
+      "n": 503,
+      "dbrier_1e4": 51.70306046097611,
+      "win": true,
+      "available": true,
+      "brier_base": 0.18541958852181292,
+      "brier_with": 0.1802492824757153
+     },
+     {
+      "block": 11,
+      "start": "2023-01-01",
+      "end": "2024-09-01",
+      "n": 398,
+      "dbrier_1e4": -4.895600765540964,
+      "win": false,
+      "available": true,
+      "brier_base": 0.09661420537710172,
+      "brier_with": 0.09710376545365582
+     }
+    ],
+    "pooled": 8.614741244918783e-06,
+    "ci": {
+     "lo": -0.00299580007507869,
+     "hi": 0.002586347481498071
+    },
+    "no_harm": true,
+    "verdict": "SHADOW",
+    "verdict_raw": "SHADOW",
+    "admissible": false,
+    "reason": "observed_record_cannot_admit",
+    "n": 5433,
+    "first_session": "2003-01-02",
+    "last_session": "2024-08-02",
+    "block": 40,
+    "n_boot": 4000,
+    "seed": 0,
+    "registry_sha": "5aef315bc003447f6d6aeb0d9853c6a79d36cb3216dcabe2492f2515c0675730"
+   },
+   "health": {
+    "n": 5433,
+    "brier": 0.12426004920831715,
+    "bss_clim": 0.06628633960282326,
+    "auc": 0.6581236706633464,
+    "guard_trips": 0,
+    "status": "shadow",
+    "reasons": []
+   }
+  }
+ },
+ "platt": {
+  "coef": {
+   "x_hmm": 0.09134638763681255
+  },
+  "intercept": -1.6874720753915837,
+  "refit_date": "2024-01-02",
+  "train_start": "1993-10-14",
+  "train_end": "2023-11-30",
+  "n_train": 7587,
+  "clim": 0.17279557137208382,
+  "feature": "x_hmm",
+  "model_id": "p3h-81c2a6bf-2024-01-02",
+  "n_params": 2
+ },
+ "sizing": {
+  "d_max": 0.35,
+  "sigma_target": 0.1,
+  "k_slow": 3.5,
+  "k_fast": 2.0,
+  "ledger_no": "6",
+  "rule": "p3|sigma=ewma(lambda=0.94,seed=60)|sT=floor_grid(Dmax/3.5)|w_vol=clip(sT/sigma,.25,1)|m=TONE_EXPOSURE[STATE_TO_TONE[p2_state]]|w=clip(w_vol*m,.25,1)|grid=.05|band=.10|weekly+escalate|cost=5bp|cash=0",
+  "constants": {
+   "sigma_model": "ewma",
+   "ewma_lambda": 0.94,
+   "ewma_seed_sessions": 60,
+   "k_slow": 3.5,
+   "k_fast": 2.0,
+   "vol_grid": [
+    0.06,
+    0.08,
+    0.1,
+    0.12,
+    0.15
+   ],
+   "d_max_default": 0.35,
+   "w_min": 0.25,
+   "w_max": 1.0,
+   "grid": 0.05,
+   "band": 0.1,
+   "floor_after_multiplier": true,
+   "cadence": "weekly",
+   "escalate_immediately": true,
+   "cost_bps": 5,
+   "cash_return": 0.0,
+   "churn_ceiling": 24,
+   "multiplier_map": {
+    "normal": 1.0,
+    "caution": 0.5,
+    "reduce": 0.25
+   },
+   "param_count": 0,
+   "sizing_rule": "p3|sigma=ewma(lambda=0.94,seed=60)|sT=floor_grid(Dmax/3.5)|w_vol=clip(sT/sigma,.25,1)|m=TONE_EXPOSURE[STATE_TO_TONE[p2_state]]|w=clip(w_vol*m,.25,1)|grid=.05|band=.10|weekly+escalate|cost=5bp|cash=0"
+  },
+  "n_params": 0
+ },
+ "kill": {
+  "state": "not_started",
+  "killed": false,
+  "stage1_done": false,
+  "stage2_done": false,
+  "last_eval_month": null
+ },
+ "mode_history": [
+  {
+   "asof_utc": "2026-09-08T15:42:45Z",
+   "deploy_mode": "tones",
+   "reason": "weekly"
+  }
+ ],
+ "run": {
+  "data_sha256": "6acfb88a95f30901548e4ec1bdef82bc4ebcba1d0ab8b1905c0a36a49e174a37",
+  "spec_sha256": "81c2a6bf7d43b57edda462f8e8133f13de616664d6e21b21cc92f7b1fbf992d2"
+ },
+ "created_at_utc": "2026-09-08T18:12:55Z",
+ "note": "유효 모드 = p2.deploy_mode ∧ p3.deploy_mode ∧ ¬kill_record ∧ ¬kill_manual (§8.3). 이 파일은 킬을 풀지 않는다 — 킬 해제는 번호 붙인 장부 항목으로만."
+}

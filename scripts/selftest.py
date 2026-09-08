@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""캐시·계약 자기점검 (빈 열 · 유령 행 · 최근성 · 열 계약) + Phase 2 자기점검 (ARCHITECTURE_PHASE2.md §13).
+"""캐시·계약 자기점검 (빈 열 · 유령 행 · 최근성 · 열 계약) + Phase 2 (ARCHITECTURE_PHASE2.md §13) ·
+Phase 3 (ARCHITECTURE_PHASE3.md §11) 자기점검.
 
 사용:
-    python scripts/selftest.py [--data-dir DIR] [--max-age-days N] [--results-dir DIR] [--ledger CSV] [--no-p2]
+    python scripts/selftest.py [--data-dir DIR] [--max-age-days N] [--results-dir DIR] [--ledger CSV] [--no-p2] [--no-p3]
 
 네트워크를 쓰지 않는다. 결과는 [OK]/[WARN]/[FAIL] 줄로 출력하고, FAIL 이 하나라도 있으면 종료 코드 1.
   FAIL = 계약 위반(파일·열·인덱스·유령 행·SPY 오래됨·(GK+OV)/CC 비율 이탈·model_p2.json 의 spec 불일치·파라미터 수 ≠ 4)
@@ -17,12 +18,22 @@ Phase 2 절(§13 selftest 추가):
   * `model_p2.json.spec_sha256 == features.spec_sha256()` (불일치 = FAIL: 코드가 모델보다 새롭다 → run_calibration.py) · n_params == PARAM_COUNT
   * `events.table_horizon(asof).warn` — FOMC 손표 잔여 60일 미만이면 WARN
   * 장부 P2 열 결측일 — completed 행 가운데 prob_dd5_20 도 p2_input_missing 도 없는 날 (WARN)
+
+Phase 3 절(ARCHITECTURE_PHASE3.md §11 selftest 추가):
+  * `smoothed_probabilities` 가 regime.py 밖에서 호출되지 않음(grep; 평활은 미래를 읽는다 — FAIL)
+  * `model_p3.json` 의 registry_sha·sizing_sha == 현재 코드 (불일치 = FAIL: daily 가 exit 1 할 상태)
+  * D_max 가 사다리 위(≥ 0.21 = 격자 최소 6% × k_slow 3.5) · 비중 규칙 적합 파라미터 0개
+  * `summary_p3.json.run.d_max == model_p3.json.sizing.d_max` · 주간 자기검사(PIT·파라미터 회계) 결과
+  * 저장된 θ 를 실캐시 관측에 다시 대 본 guard 재검사 · θ 파라미터 수 12
+  * `kill_record.json`/`kill_manual.json` 이 있으면 `model_p3.json.deploy_mode == "info_only"`(sticky)
+  * `alarms.csv` 가 읽히고 열 계약을 지키는지 · 장부 P3 열 결측일(WARN) · 신선 블록 진행
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -34,8 +45,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from mrl import data as D                                        # noqa: E402
-from mrl.config import (ALL_TICKERS, DATA_DIR, MODEL_P2_PATH, RESULTS_DIR,   # noqa: E402
-                        TWENTY_FOUR_SEVEN)
+from mrl.config import (ALARMS_PATH, ALL_TICKERS, DATA_DIR, ENSEMBLE_P3, HMM_P3_PATH,   # noqa: E402
+                        KILL_MANUAL_PATH, KILL_RECORD_PATH, MODEL_P2_PATH, MODEL_P3_PATH, P3,
+                        RESULTS_DIR, TWENTY_FOUR_SEVEN)
 
 SUMMARY_P2_NAME = "summary_p2.json"
 
@@ -371,9 +383,227 @@ def run_p2(r: Report, data_dir: Path, results_dir: Path, ledger_path: Path) -> R
             if len(comp) and m is not None:
                 last = comp.sort_values("asof").iloc[-1]
                 mid = last.get("p2_model_id")
-                r.check(L._is_missing(mid) or str(mid) == m.model_id,
-                        f"P2 장부 마지막 행({last.get('asof')}) model_id {mid} == model_p2.json {m.model_id}", level="warn")
+                same_mid = L._is_missing(mid) or str(mid) == m.model_id
+                # 통과·실패에서 문장이 뜻하는 바가 달라야 한다(같지 않은데 '==' 로 찍으면 경고가 거짓말이 된다)
+                r.check(same_mid,
+                        (f"P2 장부 마지막 행({last.get('asof')}) model_id {mid} == model_p2.json {m.model_id}"
+                         if same_mid else
+                         f"P2 장부 마지막 행({last.get('asof')}) model_id {mid} ≠ model_p2.json {m.model_id} "
+                         f"— 그 행은 이전 모델·코드로 기록됐다(장부는 기록이므로 다시 쓰지 않는다)"),
+                        level="warn")
     return r
+
+
+# ------------------------------------------------------------------
+# Phase 3 자기점검 (ARCHITECTURE_PHASE3.md §11) — 네트워크 없음, 재적합 없음
+# ------------------------------------------------------------------
+def _read_json(path: Path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+_SMOOTHED_CALL = re.compile(r"smoothed_probabilities\s*\(")
+
+
+def _grep_smoothed(root: Path) -> list[str]:
+    """`smoothed_probabilities` **호출**은 regime.py(정의)와 테스트(누수 카나리) 밖에 있으면 안 된다 (§2 점 원칙).
+
+    호출만 본다(이름 뒤에 여는 괄호) — 이 검사기 자신처럼 문자열·주석으로 이름을 언급하는 줄은 위반이 아니다.
+    반환: 위반 `파일:줄` 목록."""
+    hits: list[str] = []
+    for f in sorted(list((root / "mrl").glob("*.py")) + list((root / "scripts").glob("*.py"))):
+        if f.name == "regime.py":
+            continue
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for i, line in enumerate(text.splitlines(), start=1):
+            if _SMOOTHED_CALL.search(line) and not line.lstrip().startswith("#"):
+                hits.append(f"{f.relative_to(root).as_posix()}:{i}")
+    return hits
+
+
+def run_p3(r: Report, data_dir: Path, results_dir: Path, ledger_path: Path, root: Path = ROOT) -> Report:
+    """Phase 3 절: registry_sha·sizing_sha 일치 · θ guard 재검사 · smoothed 호출 금지(grep) · 장부 P3 열 결측일 ·
+    alarms.csv 읽힘 · kill_record 와 deploy_mode 정합 · D_max 가 사다리 위 · summary/model 의 d_max 일치 · 신선 블록."""
+    from mrl import ensemble as EN
+    from mrl import ledger as L
+    from mrl import regime as RG
+    from mrl import sizing as SZ
+    from mrl import track as TR
+
+    results_dir, ledger_path = Path(results_dir), Path(ledger_path)
+    model_path = results_dir / MODEL_P3_PATH.name
+    hmm_path = results_dir / HMM_P3_PATH.name
+
+    # (a) smoothed_probabilities 호출 금지 — 필터가 아니라 평활을 쓰면 미래를 읽는다
+    hits = _grep_smoothed(root)
+    r.check(not hits, "P3 smoothed_probabilities 는 regime.py 밖에서 호출되지 않음(전방 필터만)" if not hits
+            else f"P3 smoothed_probabilities 가 regime.py 밖에서 호출됨: {hits} — 평활은 미래를 읽는다(§2·§4.4)")
+
+    # (b) 계약 이름 (동시 확장 중인 모듈)
+    missing = [f"ledger.{n}" for n in ("P3_COLUMNS", "OUTCOME_COLUMNS_P3") if not hasattr(L, n)]
+    r.check(not missing and int(getattr(L, "SCHEMA_VERSION", 0)) >= 3,
+            f"P3 장부 계약: schema_version {getattr(L, 'SCHEMA_VERSION', None)} · P3 열 {len(getattr(L, 'P3_COLUMNS', []))}개"
+            if not missing else f"P3 장부 계약 누락: {missing}")
+
+    # (c) model_p3.json · hmm_p3.json
+    if not model_path.exists():
+        r.warn(f"P3 {model_path.name} 없음 — scripts/run_phase3.py(주간)가 먼저 만들어야 daily 가 P3 를 낸다")
+        return r
+    try:
+        m3 = _read_json(model_path)
+    except (OSError, ValueError) as e:
+        r.fail(f"P3 {model_path.name} 읽기 실패: {e}")
+        return r
+    reg_now, siz_now = EN.registry_sha256(), SZ.sizing_sha256()
+    r.check(m3.get("registry_sha") == reg_now,
+            f"P3 registry_sha {str(m3.get('registry_sha'))[:12]} == 현재 코드 {reg_now[:12]}"
+            if m3.get("registry_sha") == reg_now else
+            f"P3 registry_sha {str(m3.get('registry_sha'))[:12]} ≠ 현재 코드 {reg_now[:12]} — 코드가 산출물보다 새롭다: "
+            "run_phase3.py 를 다시 실행하라 (daily 는 exit 1)")
+    r.check(m3.get("sizing_sha") == siz_now,
+            f"P3 sizing_sha {str(m3.get('sizing_sha'))[:12]} == 현재 코드 {siz_now[:12]}"
+            if m3.get("sizing_sha") == siz_now else
+            f"P3 sizing_sha {str(m3.get('sizing_sha'))[:12]} ≠ 현재 코드 {siz_now[:12]} — run_phase3.py 를 다시 실행하라")
+    sizing_cfg = m3.get("sizing") if isinstance(m3.get("sizing"), dict) else {}
+    d_max = sizing_cfg.get("d_max")
+    try:
+        d_max_f = float(d_max)
+    except (TypeError, ValueError):
+        d_max_f = float("nan")
+    floor = float(min(P3["vol_grid"])) * float(P3["k_slow"])          # 0.06 × 3.5 = 0.21
+    r.check(np.isfinite(d_max_f) and d_max_f >= floor - 1e-12,
+            f"P3 D_max {d_max_f:.2f} ≥ 사다리 최소 {floor:.2f} (σ_T {float(sizing_cfg.get('sigma_target', float('nan'))) * 100:.0f}%)"
+            if np.isfinite(d_max_f) and d_max_f >= floor - 1e-12 else
+            f"P3 D_max {d_max} 가 사다리 아래({floor:.2f} 미만) — §6.1.2 는 그 예산선을 제공하지 않는다")
+    r.check(int(sizing_cfg.get("n_params", -1)) == 0,
+            f"P3 비중 규칙 적합 파라미터 {sizing_cfg.get('n_params')} == 0 (§6-b)")
+
+    # (d) summary_p3.json 의 run.d_max 와 model_p3.json.sizing.d_max 일치
+    sp3_path = results_dir / "summary_p3.json"
+    if sp3_path.exists():
+        try:
+            sp3 = _read_json(sp3_path)
+            run3 = sp3.get("run") or {}
+            same = (run3.get("d_max") is not None and np.isfinite(_num_or_nan(run3.get("d_max")))
+                    and abs(_num_or_nan(run3.get("d_max")) - d_max_f) < 1e-12)
+            r.check(bool(same), f"P3 summary_p3.run.d_max {run3.get('d_max')} == model_p3.sizing.d_max {d_max}")
+            r.check(run3.get("registry_sha") == m3.get("registry_sha") and run3.get("sizing_sha") == m3.get("sizing_sha"),
+                    "P3 summary_p3.run 의 registry_sha·sizing_sha == model_p3.json")
+            det = sp3.get("determinism") if isinstance(sp3.get("determinism"), dict) else {}
+            r.check(det.get("ok") is not False, f"P3 결정론: {det.get('status')} — {det.get('note')}", level="warn")
+            st = sp3.get("selftest") if isinstance(sp3.get("selftest"), dict) else {}
+            for k in ("hmm_param_count_ok", "p2_param_count_ok", "sizing_n_params_ok", "production_shadow_only",
+                      "pit_bit_identical"):
+                if k in st:
+                    r.check(st[k] is not False, f"P3 주간 자기검사 {k} = {st[k]}")
+            fb = ((sp3.get("reference") or {}).get("fresh_blocks")) or {}
+            need = int(fb.get("need") or ENSEMBLE_P3["fresh_blocks_min"])
+            r.ok(f"P3 신선 블록 {fb.get('complete', 0)}/{need}" + (f" (라이브 시작 {fb.get('live_start')})"
+                                                                  if fb.get("live_start") else " (라이브 시작 전)"))
+        except (OSError, ValueError) as e:
+            r.warn(f"P3 {sp3_path.name} 읽기 실패: {e}")
+    else:
+        r.warn(f"P3 {sp3_path.name} 없음 — 시나리오·참조 분포 없이 daily 는 회색 'n/a' 로 간다")
+
+    # (e) θ guard 재검사 — 저장된 θ 를 실캐시 관측에 다시 대 본다
+    if not hmm_path.exists():
+        r.warn(f"P3 {hmm_path.name} 없음 — daily 는 exit 1 이다")
+    else:
+        try:
+            thetas, live = RG.load_thetas(hmm_path)
+        except (OSError, ValueError, KeyError) as e:
+            r.fail(f"P3 {hmm_path.name} 읽기 실패: {e}")
+            thetas, live = [], None
+        if thetas:
+            r.check(all(RG.n_params(t) == RG.HMM_PARAM_COUNT for t in thetas),
+                    f"P3 HMM θ 파라미터 수 {RG.HMM_PARAM_COUNT}개 × {len(thetas)}회 재적합")
+            try:
+                bundle = D.load_cache(data_dir)
+                close = bundle.spy_ohlc["Close"].astype(float)
+                obs = RG.observations(close)
+                th = live or thetas[-1]
+                occ = RG.occupancy(obs.dropna(), th)
+                ok_g, why = RG.guard_check(th, occ, None)
+                r.check(bool(ok_g), f"P3 θ guard 재검사({th.refit_date} · {th.theta_id}): 통과 · 점유 "
+                        f"{float(occ[1]) * 100:.1f}%" if ok_g else f"P3 θ guard 재검사 실패: {why}")
+            except Exception as e:                                # noqa: BLE001 - 조용한 실패 금지
+                r.fail(f"P3 θ guard 재검사 예외: {type(e).__name__}: {e}")
+
+    # (f) kill_record.json 과 deploy_mode 정합 (킬은 sticky — 주간 재적합이 풀 수 없다)
+    kr, km = results_dir / KILL_RECORD_PATH.name, results_dir / KILL_MANUAL_PATH.name
+    killed = kr.exists() or km.exists()
+    mode = str(m3.get("deploy_mode") or "")
+    r.check((not killed) or mode == "info_only",
+            (f"P3 킬 기록 {'있음' if killed else '없음'} · model_p3.deploy_mode = {mode}" if (not killed) or mode == "info_only"
+             else f"P3 kill_record.json 이 있는데 model_p3.deploy_mode = {mode} — 킬은 sticky 여야 한다(§8.3)"))
+    if killed:
+        for p in (kr, km):
+            if p.exists():
+                try:
+                    rec = _read_json(p)
+                    r.ok(f"P3 {p.name}: {rec.get('asof')} · {rec.get('ci_label') or rec.get('state')} · "
+                         f"장부 {rec.get('ledger_entry')}")
+                except (OSError, ValueError) as e:
+                    r.fail(f"P3 {p.name} 읽기 실패: {e}")
+
+    # (g) alarms.csv 읽힘
+    ap_ = results_dir / ALARMS_PATH.name
+    if ap_.exists():
+        try:
+            al = pd.read_csv(ap_, encoding="utf-8")
+            missing_cols = [c for c in TR.ALARM_CSV_COLUMNS if c not in al.columns]
+            r.check(not missing_cols, f"P3 {ap_.name} {len(al)}행 · 열 {list(TR.ALARM_CSV_COLUMNS)}"
+                    if not missing_cols else f"P3 {ap_.name} 열 누락: {missing_cols}")
+            if len(al):
+                last = al.sort_values("asof").iloc[-1]
+                r.ok(f"P3 마지막 경보 {last.get('asof')} {last.get('code')} (값 {last.get('value')})")
+        except (OSError, ValueError) as e:
+            r.fail(f"P3 {ap_.name} 읽기 실패: {e}")
+    else:
+        r.ok(f"P3 {ap_.name} 없음 — 아직 경보가 없다(정상)")
+
+    # (h) 장부 P3 열 결측일 — P2 확률이 있는데 P3 열도 사유도 없는 날
+    if not ledger_path.exists():
+        r.warn(f"P3 장부 {ledger_path.name} 없음 (아직 daily 기록 없음)")
+        return r
+    try:
+        df = L._read(ledger_path)
+    except Exception as e:                                        # noqa: BLE001
+        r.fail(f"P3 장부 읽기 실패: {e}")
+        return r
+    miss_cols = [c for c in L.P3_COLUMNS if c not in df.columns]
+    r.check(not miss_cols, "P3 장부 P3 열 모두 존재" if not miss_cols else f"P3 장부 P3 열 누락: {miss_cols}")
+    comp = df[df["variant"] == "completed"] if "variant" in df.columns else df
+    if len(comp) and not miss_cols:
+        has_p2 = pd.to_numeric(comp["prob_dd5_20"], errors="coerce").notna()
+        has_p3 = pd.to_numeric(comp["p3_sigma_ewma"], errors="coerce").notna()
+        reason = comp["p3_w_reason"].map(lambda v: not L._is_missing(v) and str(v).strip() != "")
+        gap = comp[has_p2 & ~has_p3 & ~reason]
+        days = sorted(str(a) for a in gap["asof"].tolist())
+        r.check(not days, f"P3 장부 completed {len(comp)}행: P3 열 결측일 없음" if not days
+                else f"P3 장부 P3 열 결측일 {len(days)}일 (Phase 2 시절 행이거나 daily 실패): "
+                     f"{days[:5]}{' …' if len(days) > 5 else ''}", level="warn")
+        last = comp.sort_values("asof").iloc[-1]
+        for col, want, label in (("p3_registry_sha", reg_now, "registry_sha"), ("p3_sizing_sha", siz_now, "sizing_sha")):
+            v = last.get(col)
+            r.check(L._is_missing(v) or str(v) == want,
+                    f"P3 장부 마지막 행({last.get('asof')}) {label} == 현재 코드", level="warn")
+        eff = last.get("p3_effective_mode")
+        # 결측(P3 이전에 쓰인 행)은 'nan' 이 아니라 '기록 없음' 으로 읽는다 — 페이지·로그에 불량 토큰을 흘리지 않는다
+        r.check(L._is_missing(eff) or str(eff) in L.P3_DEPLOY_MODES,
+                f"P3 장부 마지막 행({last.get('asof')}) 유효 모드 = "
+                + ("기록 없음 (P3 배선 전 행)" if L._is_missing(eff) else str(eff)))
+    return r
+
+
+def _num_or_nan(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -383,13 +613,14 @@ def main(argv: list[str] | None = None) -> int:
                 stream.reconfigure(encoding="utf-8", errors="replace")
             except (ValueError, OSError):
                 pass
-    ap = argparse.ArgumentParser(description="캐시 자기점검 + Phase 2 자기점검")
+    ap = argparse.ArgumentParser(description="캐시 자기점검 + Phase 2·Phase 3 자기점검")
     ap.add_argument("--data-dir", default=str(DATA_DIR))
     ap.add_argument("--max-age-days", type=int, default=6,
                     help="SPY 마지막 일자가 오늘로부터 이 일수보다 오래되면 FAIL (주말+휴장 고려, 기본 6)")
     ap.add_argument("--results-dir", default=str(RESULTS_DIR), help="model_p2.json · summary_p2.json 위치 (읽기 전용)")
     ap.add_argument("--ledger", default=str(RESULTS_DIR / "track_record.csv"), help="장부 CSV 경로")
     ap.add_argument("--no-p2", action="store_true", help="Phase 2 절 생략 (캐시 자기점검만)")
+    ap.add_argument("--no-p3", action="store_true", help="Phase 3 절 생략")
     args = ap.parse_args(argv)
     rep = run(Path(args.data_dir), args.max_age_days)
     if not args.no_p2 and rep.n_fail == 0:
@@ -398,6 +629,12 @@ def main(argv: list[str] | None = None) -> int:
         run_p2(rep, Path(args.data_dir), Path(args.results_dir), Path(args.ledger))
     elif not args.no_p2:
         rep.warn("캐시 자기점검 FAIL → Phase 2 절 생략")
+    if not args.no_p3 and rep.n_fail == 0:
+        rep.lines.append("")
+        rep.lines.append("--- Phase 3 자기점검 (ARCHITECTURE_PHASE3.md §11) ---")
+        run_p3(rep, Path(args.data_dir), Path(args.results_dir), Path(args.ledger))
+    elif not args.no_p3:
+        rep.warn("앞 절 FAIL → Phase 3 절 생략")
     print("\n".join(rep.lines))
     n_ok = sum(1 for ln in rep.lines if ln.startswith("[OK]"))
     print(f"\n결과: FAIL {rep.n_fail} · WARN {rep.n_warn} · OK {n_ok}")

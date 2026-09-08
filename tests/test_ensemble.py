@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import re
 from pathlib import Path
 
@@ -730,3 +731,45 @@ def test_walk_forward_matches_offline_recompute():
         x = float(np.log(np.clip(p_high, clip, 1 - clip)) - np.log1p(-np.clip(p_high, clip, 1 - clip)))
         p_h = platt[year].predict_one(pd.Series({E.PLATT_FEATURE: x}, name=t))
         assert p_h == pytest.approx(float(df.loc[t, "p_h"]), abs=1e-12)
+
+
+# ------------------------------------------------------------------
+# 장부 번호는 VALIDATION.md §8 에 실제로 있는 행을 가리켜야 한다 (§6 "장부에 없는 실험 결과는 채택 불가")
+# ------------------------------------------------------------------
+def _validation_ledger_ids() -> set[str]:
+    """VALIDATION.md §8 표의 # 열 값 집합."""
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "VALIDATION.md").read_text(encoding="utf-8")
+    sec = text[text.index("## 8. 실험 장부"):]
+    sec = sec[:sec.index("\n## ")] if "\n## " in sec else sec
+    out = set()
+    for ln in sec.splitlines():
+        if not ln.startswith("| ") or ln.startswith("| # |") or ln.startswith("|---"):
+            continue
+        out.add(ln.split("|")[1].strip().strip("~").strip())
+    return out
+
+
+def test_registry_ledger_numbers_exist_in_validation_ledger():
+    """등록부·비중·킬 기록이 인용하는 장부 번호가 §8 에 없으면 그 인용은 거짓이다."""
+    ids = _validation_ledger_ids()
+    assert {"3a", "6", "7", "8"} <= ids, f"§8 에 Phase 3 행이 없다: {sorted(ids)}"
+    for m in E.REGISTRY:
+        no = str(m.ledger_no).lstrip("#")
+        if no == "-":
+            continue
+        assert no in ids, f"등록부 멤버 {m.name} 의 ledger_no {m.ledger_no} 가 VALIDATION.md §8 에 없다"
+
+
+def test_artifact_and_kill_ledger_numbers_exist_in_validation_ledger():
+    """model_p3.json 의 sizing.ledger_no 와 track 이 찍는 kill 기록 번호도 §8 행이어야 한다."""
+    from mrl import track as T
+    ids = _validation_ledger_ids()
+    root = Path(__file__).resolve().parents[1]
+    p = root / "results" / "model_p3.json"
+    if p.exists():
+        sizing_no = str((json.loads(p.read_text(encoding="utf-8")).get("sizing") or {}).get("ledger_no") or "")
+        if sizing_no:
+            assert sizing_no.lstrip("#") in ids, f"model_p3.sizing.ledger_no {sizing_no!r} 가 §8 에 없다"
+    entry = str(T.KILL_RECORD_TEMPLATE_LEDGER_ENTRY) if hasattr(T, "KILL_RECORD_TEMPLATE_LEDGER_ENTRY") else "7x"
+    assert entry.lstrip("#").rstrip("x") in ids, f"킬 기록 ledger_entry {entry!r} 의 뿌리 항목이 §8 에 없다"

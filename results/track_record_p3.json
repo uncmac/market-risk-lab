@@ -1,0 +1,361 @@
+{
+  "schema_version": 3,
+  "n_rows": 1,
+  "n_scored": 0,
+  "n_eff": 0.0,
+  "live_start": null,
+  "months_elapsed": 0,
+  "effective_mode": "info_only",
+  "deploy_sizing": true,
+  "sizing": {
+    "avg_w": null,
+    "n_changes_252": 0,
+    "realized_vol_ratio": null,
+    "rule_dd": null,
+    "rule_vs_bh_20": null
+  },
+  "members": {},
+  "disagreement": {
+    "median_width": null,
+    "p90_width": null,
+    "flag_sessions": 0
+  },
+  "kill": {
+    "state": "not_started",
+    "live_start": null,
+    "clock_end": null,
+    "n": 0,
+    "n_eff": 0.0,
+    "months": 0,
+    "episodes5": 0,
+    "breach_dates": [],
+    "bss_clim": null,
+    "ci": null,
+    "ci_label": null,
+    "stage1_due": false,
+    "stage2_due": false,
+    "evaluated_now": false,
+    "killed": false,
+    "stage1_done": false,
+    "stage2_done": false,
+    "last_eval_month": null,
+    "countdown": {
+      "episodes": "0/8",
+      "months": "0/36",
+      "cap": "0/60"
+    },
+    "gross_failure_badge": false,
+    "manual": null,
+    "holdout_locked": false,
+    "members": {},
+    "score": null,
+    "asof": "2026-09-04",
+    "rule": "1차 36개월(점추정 ≤ 0 → info_only, sticky) · 2차 = 8회 또는 60개월 중 먼저 · 이후 12개월마다 재평가 · 라벨은 부트스트랩 CI 하한(VALIDATION.md §7 실행 해석, 장부 #7)",
+    "rearm": {
+      "automatic": false,
+      "procedure": "복귀는 코드에 없다: 새 번호 장부 항목 + 킬 이후 ≥ 12개월 + **전체 라이브 창**의 CI 하한 > 0.0 (부분 창 금지)"
+    }
+  },
+  "alarms": [],
+  "replay_mismatch_count": null,
+  "coverage": {
+    "vix80": null,
+    "har80": null
+  },
+  "horizon": {
+    "stage": "0-3m",
+    "n_eff": 0.0,
+    "months": 0,
+    "show": [
+      "sessions",
+      "missing_days",
+      "alarms",
+      "mean_p_vs_clim",
+      "state_days",
+      "w_path",
+      "rule_vs_bh_63",
+      "band_hit_raw",
+      "vol_log_mae",
+      "shadow_members"
+    ],
+    "hide": [
+      "brier",
+      "bss",
+      "ci",
+      "reliability_2bin",
+      "reliability_pooled",
+      "hist_pct",
+      "verdict",
+      "ci_label"
+    ],
+    "sentences_ko": [
+      "독립 창 3개 — 어떤 결론도 없음. 지금 보이는 것은 파이프라인이 매일 돌고 기록이 맞게 쌓인다는 것뿐. 과거 3개월 창의 skill 은 −0.17~+0.85(10/90분위)였다."
+    ],
+    "sentence_ko": "독립 창 3개 — 어떤 결론도 없음. 지금 보이는 것은 파이프라인이 매일 돌고 기록이 맞게 쌓인다는 것뿐. 과거 3개월 창의 skill 은 −0.17~+0.85(10/90분위)였다.",
+    "footnote_ko": "라이브 기록은 해마다 독립 창 ~12개·에피소드 ~1개가 쌓인다. 판정일은 36개월(1차)과 8회 또는 60개월(2차); 그때까지 이 페이지는 일기이지 판결이 아니다.",
+    "hidden_reason": "n_eff < 6 — §8.4: 3개월 창의 skill 은 잡음(10/90분위 ±0.8)이라 회색으로도 표시하지 않는다",
+    "may_show_bss": false,
+    "may_show_verdict": false,
+    "verdict_state": null
+  },
+  "panel": {
+    "stage": "0-3m",
+    "asof": "2026-09-04",
+    "live_start": null,
+    "i_p_level": {
+      "n": 0,
+      "mean_p": null,
+      "share_gt_030": null,
+      "backtest": {
+        "mean_p": 0.16166070354787088,
+        "share_gt_030": 0.11314872547221713
+      }
+    },
+    "ii_state_occupancy": {
+      "n": 0,
+      "occupancy": {},
+      "backtest": {
+        "normal": 0.7936915459380157,
+        "caution": 0.15954520447460113,
+        "reduce": 0.04676324958738309
+      }
+    },
+    "iii_switching": {
+      "switches_per_year": null,
+      "w_changes_per_year": null,
+      "n_changes_252": 0,
+      "churn_ceiling": 24,
+      "backtest": {
+        "switches_per_year": 3.8826118855465883,
+        "w_changes_per_year": 10.86206896551724
+      }
+    },
+    "iv_exposure": {
+      "n": 0,
+      "avg_w": null,
+      "share_floor": null,
+      "share_full": null,
+      "backtest": {
+        "avg_w": 0.6861910874747845,
+        "share_floor": 0.1898037777370255,
+        "share_full": 0.07280396112231799
+      }
+    },
+    "v_vol_forecast": {
+      "har_log_mae": null,
+      "ewma_log_bias": null,
+      "n_har": 0,
+      "n_rv": 0,
+      "n_ewma": 0,
+      "backtest": {
+        "har_log_mae_p50": 0.2602651714636317,
+        "ewma_bias_range": [
+          -0.3368658742247629,
+          0.3054902586769898
+        ]
+      }
+    },
+    "vi_coverage": {
+      "vix80": {
+        "n": 0,
+        "n_eff": 0.0,
+        "hit": null,
+        "backtest": 0.9355788698693172
+      },
+      "har80": {
+        "n": 0,
+        "n_eff": 0.0,
+        "hit": null,
+        "backtest": 0.8301122768267992
+      }
+    },
+    "vii_skill": {
+      "n": 0,
+      "n_eff": 0.0,
+      "brier": null,
+      "base_rate": null,
+      "bss_clim": null,
+      "bss_m1": null,
+      "bss_vix": null,
+      "bss_vix_bgk": null,
+      "ci_bss_clim": null,
+      "ci_label": null,
+      "hist_pct": null,
+      "backtest_quantiles": {
+        "63": {
+          "n": 256,
+          "p5": -0.22986091348069398,
+          "p10": -0.17287502731552995,
+          "p50": 0.10619533693340383,
+          "p90": 0.8529916767630464,
+          "p95": 0.9158187449267798,
+          "min": -2.4520572048334826,
+          "max": 0.9687198207566804,
+          "share_lt_0": 0.34375
+        },
+        "126": {
+          "n": 253,
+          "p5": -0.15062134839537986,
+          "p10": -0.11640146661463491,
+          "p50": 0.07960914498880178,
+          "p90": 0.8126876610310448,
+          "p95": 0.8514172969320445,
+          "min": -1.053911341362833,
+          "max": 0.946374630588222,
+          "share_lt_0": 0.3557312252964427
+        },
+        "252": {
+          "n": 247,
+          "p5": -0.10041454113521442,
+          "p10": -0.06945807840558924,
+          "p50": 0.06287824060916447,
+          "p90": 0.49864867046216,
+          "p95": 0.8266799175943648,
+          "min": -0.5094795997239505,
+          "max": 0.9305627266383103,
+          "share_lt_0": 0.291497975708502
+        },
+        "756": {
+          "n": 223,
+          "p5": -0.029155589570216,
+          "p10": -0.009414046686802303,
+          "p50": 0.06463409331450276,
+          "p90": 0.23180971288919275,
+          "p95": 0.41443556868364456,
+          "min": -0.07705085434242154,
+          "max": 0.5372806688819874,
+          "share_lt_0": 0.11659192825112108
+        }
+      },
+      "hidden": [
+        "brier",
+        "bss",
+        "ci",
+        "hist_pct",
+        "ci_label"
+      ],
+      "hidden_reason": "n_eff < 6 — §8.4: 3개월 창의 skill 은 잡음(10/90분위 ±0.8)이라 회색으로도 표시하지 않는다"
+    },
+    "viii_relative": {
+      "n": 0,
+      "rule_minus_bh_20_mean_pp": null,
+      "rule_dd_worst": null,
+      "backtest": {
+        "63": [
+          -5.131550155558973,
+          -0.9800921065671431,
+          3.3454119407767102
+        ],
+        "126": [
+          -7.390447508520922,
+          -2.0591828906715293,
+          2.931475496785825
+        ],
+        "252": [
+          -10.445014815227749,
+          -4.690527019603552,
+          -1.2470826472277707
+        ],
+        "756": [
+          -27.94654201763967,
+          -15.390434808539656,
+          1.5372139920384358
+        ],
+        "maxdd_252_median": -0.09338137576311945,
+        "maxdd_252_worst": -0.23492525572198097
+      }
+    },
+    "ix_kill": {
+      "state": null,
+      "countdown": {
+        "episodes": "0/8",
+        "months": "0/36",
+        "cap": "0/60"
+      },
+      "episodes5": 0,
+      "months": 0,
+      "stage1_due": false,
+      "stage2_due": false,
+      "gross_failure_badge": false,
+      "midterm_checks": {
+        "12m": false,
+        "24m": false,
+        "can_kill": false
+      },
+      "hidden": [
+        "verdict"
+      ],
+      "hidden_reason": "n_eff < 6 — §8.4: 3개월 창의 skill 은 잡음(10/90분위 ±0.8)이라 회색으로도 표시하지 않는다"
+    },
+    "x_alarms": {
+      "alarms": [],
+      "codes": [],
+      "replay_mismatch_count": null
+    },
+    "xi_registry": {
+      "members": {},
+      "disagreement": {
+        "median_width": null,
+        "p90_width": null,
+        "flag_sessions": 0
+      },
+      "fresh_blocks": {
+        "complete": 0,
+        "need": 11,
+        "note": "Phase 2 톤 가동 전 — 신선 블록은 라이브 시작부터 센다(§5.4)"
+      }
+    },
+    "horizon": {
+      "stage": "0-3m",
+      "n_eff": 0.0,
+      "months": 0,
+      "show": [
+        "sessions",
+        "missing_days",
+        "alarms",
+        "mean_p_vs_clim",
+        "state_days",
+        "w_path",
+        "rule_vs_bh_63",
+        "band_hit_raw",
+        "vol_log_mae",
+        "shadow_members"
+      ],
+      "hide": [
+        "brier",
+        "bss",
+        "ci",
+        "reliability_2bin",
+        "reliability_pooled",
+        "hist_pct",
+        "verdict",
+        "ci_label"
+      ],
+      "sentences_ko": [
+        "독립 창 3개 — 어떤 결론도 없음. 지금 보이는 것은 파이프라인이 매일 돌고 기록이 맞게 쌓인다는 것뿐. 과거 3개월 창의 skill 은 −0.17~+0.85(10/90분위)였다."
+      ],
+      "sentence_ko": "독립 창 3개 — 어떤 결론도 없음. 지금 보이는 것은 파이프라인이 매일 돌고 기록이 맞게 쌓인다는 것뿐. 과거 3개월 창의 skill 은 −0.17~+0.85(10/90분위)였다.",
+      "footnote_ko": "라이브 기록은 해마다 독립 창 ~12개·에피소드 ~1개가 쌓인다. 판정일은 36개월(1차)과 8회 또는 60개월(2차); 그때까지 이 페이지는 일기이지 판결이 아니다.",
+      "hidden_reason": "n_eff < 6 — §8.4: 3개월 창의 skill 은 잡음(10/90분위 ±0.8)이라 회색으로도 표시하지 않는다",
+      "may_show_bss": false,
+      "may_show_verdict": false,
+      "verdict_state": null
+    },
+    "notes": [
+      "라이브 시작 전: prob_dd5_20 이 있고 p2_deploy_mode == 'tones' 인 행이 없습니다 (Phase 2 info_only 기간·재현 행은 라이브가 아닙니다 — §8.1)",
+      "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+      "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+      "alarms: 채점 가능한 행이 없습니다(홀드아웃 잠금)",
+      "장부에 P3 행이 없습니다 (schema 2 기록만 있음 — P3 열은 빈 값으로 승격되어 있습니다)"
+    ]
+  },
+  "holdout_locked": false,
+  "notes": [
+    "라이브 시작 전: prob_dd5_20 이 있고 p2_deploy_mode == 'tones' 인 행이 없습니다 (Phase 2 info_only 기간·재현 행은 라이브가 아닙니다 — §8.1)",
+    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+    "alarms: 채점 가능한 행이 없습니다(홀드아웃 잠금)",
+    "장부에 P3 행이 없습니다 (schema 2 기록만 있음 — P3 열은 빈 값으로 승격되어 있습니다)"
+  ],
+  "n_p3_rows": 0
+}

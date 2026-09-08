@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""매일 판정: update_daily → apply_guards → 완성 봉 기준일 결정 → v0_day(faithful·completed) → P2 확률·상태·귀속 → 장부 → docs/index.html
+"""매일 판정: update_daily → apply_guards → 완성 봉 기준일 결정 → v0_day(faithful·completed) → P2 확률·상태·귀속
+→ P3 비중·국면·시나리오·경보·킬룰 → 장부 → docs/index.html
 
 사용:
     python scripts/daily.py                       # 캐시 갱신(네트워크) 후 오늘 판정 기록
     python scripts/daily.py --no-update           # 캐시 갱신 없이(오프라인) 현재 캐시로 판정 (테스트·재생성용)
     python scripts/daily.py --now "2026-09-04 12:00"   # ET 시각을 고정 (테스트: 장중이면 '미완성' 경로)
+    python scripts/daily.py --no-p3                    # Phase 3 블록 생략(디버그)
+    python scripts/daily.py --require-p3               # Phase 3 산출물이 없으면 exit 1 (ARCHITECTURE_PHASE3.md §11)
 
-흐름 (ARCHITECTURE.md 스크립트 절 + ARCHITECTURE_PHASE2.md §13)
+흐름 (ARCHITECTURE.md 스크립트 절 + ARCHITECTURE_PHASE2.md §13 + ARCHITECTURE_PHASE3.md §11)
   1. bundle = update_daily()(또는 load_cache) → apply_guards (멱등).
   2. asof = SPY 마지막 일자. 지금(ET)이 그 세션 마감(16:05 ET) 전이면 상태 'incomplete' 로 표시하고 **직전 완성 세션**을
      asof 로 쓴다. 오늘 봉이 없으면 주말/휴장/개장 전/데이터 지연으로 구분해 표시하고 마지막 완성 세션을 쓴다.
@@ -24,11 +27,22 @@
      실패(exit 1): model_p2.json 없음 · spec 불일치 · 배치된 단의 라이브 계수 없음/spec 불일치 · 홀드아웃 해제 후 1월 첫 주간 실행
      이후 refit_year ≠ 올해.
      입력 결측은 실패가 아니라 "확률 계산 불가" 경로(상태 유지, days 증가, p2_input_missing 사유).
+  3c. **Phase 3 (재적합·채택 금지)**: results/model_p3.json · hmm_p3.json 을 읽기만 한다(registry_sha·sizing_sha 가
+     현재 코드와 다르면 exit 1 — 코드가 산출물보다 새롭다). σ̂ = EWMA(λ 0.94, 완성 봉) → 비중 규칙(격자 0.05·밴드 0.10·
+     주 마지막 세션 갱신 + 결정층 격상 시 즉시 하향; 적합 파라미터 0) → 전방 필터 P(고변동)과 어제 값에서 한 걸음의
+     1e-7 대조 → 그림자 멤버 H(Platt 2) → 불일치 구간 → 시나리오 3줄 → 경보 D1~D11(D7 실패는 exit 1) → 2단계 킬룰
+     (킬이면 model_p3.json.deploy_mode=info_only + kill_record.json; sticky) → 장부 P3 열 + index.html 의 p3 카드.
+     **유효 모드 = p2.deploy_mode ∧ p3.deploy_mode ∧ ¬kill** 이며, info_only 면 비중·상태·톤·D_max 사다리를
+     제안하지 않는다(§15 단계 0): 변동성 단독 w_vol 만 reason `info_only` 로 장부에 남는다.
+     입력 결측은 실패가 아니라 `input_missing`(직전 비중 유지; 절대 1.0 으로 복귀하지 않는다).
+     주간 산출물이 그 results 디렉터리에 **하나도** 없으면(model_p3.json·hmm_p3.json 둘 다) 경고를 남기고 P3 블록을
+     건너뛴다 — 조용한 생략이 아니라 로그·경고·빈 P3 열로 드러난다. `--require-p3` 면 그 경우도 exit 1(§11 문자 그대로).
   4. ledger.backfill — 결과 열은 **완성 세션까지의 SPY 종가**로만 채운다(미완성 봉 사용 금지).
-  5. report.render_index → docs/index.html (v0 판정 블록 아래 p2 카드).
+  5. report.render_index → docs/index.html (v0 판정 블록 아래 p2 카드, 그 아래 p3 카드).
   6. GitHub Actions 안이면($GITHUB_OUTPUT) asof / market_status / appended 를 스텝 출력으로 내보낸다 — daily.yml 은
      market_status == 'current' 인 실행만 게이트가 인식하는 제목(`daily: <날짜>`)으로 커밋하고, 그 밖(incomplete/pre_open/
      stale/…)은 `daily(<상태>): <날짜>` 로 커밋해 예약 실행이 그날을 건너뛰지 않게 한다.
+  6b. GitHub 스텝 출력에 Phase 3 값(p3_w_exec · p3_reason · kill_state · alarms · effective_mode)을 함께 내보낸다.
 종료 코드: 0 성공, 1 실패(예외 — 판정이 없으면 페이지를 만들지 않는다: 조용한 실패 금지).
 """
 from __future__ import annotations
@@ -54,15 +68,21 @@ if str(ROOT) not in sys.path:
 from mrl import calendar_us as CAL                                      # noqa: E402
 from mrl import data as D                                               # noqa: E402
 from mrl import decision as DEC                                         # noqa: E402
+from mrl import ensemble as EN                                          # noqa: E402
 from mrl import events as EV                                            # noqa: E402
 from mrl import features as F                                           # noqa: E402
 from mrl import ledger as L                                             # noqa: E402
 from mrl import model as M                                              # noqa: E402
+from mrl import regime as RG                                            # noqa: E402
 from mrl import report as RPT                                           # noqa: E402
+from mrl import scenarios as SC                                         # noqa: E402
 from mrl import signals_v0 as S                                         # noqa: E402
+from mrl import sizing as SZ                                            # noqa: E402
+from mrl import track as TR                                             # noqa: E402
 from mrl import vol as V                                                # noqa: E402
-from mrl.config import (DATA_DIR, DOCS_DIR, ET, HOLDOUT_UNLOCK_PATH, MODEL_P2_PATH, P2,   # noqa: E402
-                        RESULTS_DIR)
+from mrl.config import (ALARMS_PATH, DATA_DIR, DOCS_DIR, ENSEMBLE_P3, ET, HMM_P3, HMM_P3_PATH,   # noqa: E402
+                        HOLDOUT_UNLOCK_PATH, KILL_MANUAL_PATH, KILL_P3, KILL_RECORD_PATH, MODEL_P2_PATH,
+                        MODEL_P3_PATH, P2, P3_DRIFT, RESULTS_DIR, TRACK_P3_PATH)
 
 MARKET_OPEN = dtime(9, 30)
 STATUS_NOTE = {
@@ -81,8 +101,18 @@ P2_INFO_RUNG = "M3"            # 배포 단이 없을 때(info_only) 정보로 �
 P2_RELIABILITY_KEY = {"M3": "reliability", "M1": "reliability_m1"}   # 단별 신뢰도 표(보정 구간용)
 
 
+SUMMARY_P3_NAME = "summary_p3.json"
+REPORT_P3_FUNCS = ("p3_card",)                 # §10 계약 — 없으면 조용히 건너뛰지 않고 exit 1
+LEDGER_P3_NAMES = ("P3_COLUMNS",)              # §9 계약
+
+
 class P2Fatal(RuntimeError):
     """Phase 2 실패 조건(§13): model_p2.json 없음 · spec 불일치 · 재적합 연도 규칙 위반 → exit 1."""
+
+
+class P3Fatal(RuntimeError):
+    """Phase 3 실패 조건(§11): model_p3.json/hmm_p3.json 없음 · sha 불일치 · D7 정합 실패 ·
+    킬 기록이 있는데 유효 모드가 info_only 가 아님 · 계약 이름 없음 → exit 1."""
 
 
 def _utf8_stdout() -> None:
@@ -600,7 +630,408 @@ def compute_p2(bundle, asof: pd.Timestamp, ledger_path: Path, results_dir: Path,
            f"어제 대비 {dod.get('d_p', math.nan) * 100:+.1f}pp · HAR {har_fc * 100:.1f}% · deploy {dep['deploy_mode']}"
            if ok else
            f"[daily] P2 {m_dep.model_id} ({who}) · {why} · 상태 유지 {state} (체류 {days}) · deploy {dep['deploy_mode']}")
-    return {"ledger": ledger_cols, "card": card, "log": log, "ok": ok, "deployment": {k: v for k, v in dep.items() if k != "model"}}
+    return {"ledger": ledger_cols, "card": card, "log": log, "ok": ok, "model_dep": m_dep, "params": params,
+            "feats": feats, "deployment": {k: v for k, v in dep.items() if k != "model"}}
+
+
+# ------------------------------------------------------------------
+# Phase 3 (ARCHITECTURE_PHASE3.md §11 daily) — 재적합·채택 금지, 읽기 전용 모델
+# ------------------------------------------------------------------
+def require_p3_contract() -> None:
+    """§9·§10 계약 이름이 없으면 **조용히 건너뛰지 않고** 즉시 실패한다(동시 확장 중인 모듈 대비)."""
+    missing = [f"mrl.ledger.{n}" for n in LEDGER_P3_NAMES if not hasattr(L, n)]
+    missing += [f"mrl.report.{n}" for n in REPORT_P3_FUNCS if not hasattr(RPT, n)]
+    if int(getattr(L, "SCHEMA_VERSION", 0)) < 3:
+        missing.append(f"mrl.ledger.SCHEMA_VERSION >= 3 (현재 {getattr(L, 'SCHEMA_VERSION', None)})")
+    if missing:
+        raise P3Fatal("Phase 3 계약이 없습니다: " + ", ".join(missing)
+                      + " — ARCHITECTURE_PHASE3.md §9·§10 의 이름 그대로 mrl/ledger.py·mrl/report.py 에 있어야 한다")
+
+
+def _load_json(path: Path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _prev_p3_row(prev_rows: pd.DataFrame):
+    """장부의 마지막 **유효** P3 행(p3_w_exec 가 기록된 행). 없으면 None — 조용히 1.0 으로 돌아가지 않는다."""
+    if prev_rows is None or not len(prev_rows) or "p3_w_exec" not in prev_rows.columns:
+        return None
+    w = pd.to_numeric(prev_rows["p3_w_exec"], errors="coerce")
+    valid = prev_rows[w.notna()]
+    return None if not len(valid) else valid.iloc[-1]
+
+
+def _theta_by_id(thetas, theta_id):
+    for t in thetas or []:
+        if str(t.theta_id) == str(theta_id):
+            return t
+    return None
+
+
+def _replay_weights(tgt: pd.Series, mult: pd.Series, deployed, week_end, init_w, init_m) -> list[float]:
+    """`SZ.execute` 와 같은 규칙을 굴리되 **배치 여부를 행마다** 준다 (D7 재현 전용).
+
+    execute 는 경로 전체에 한 모드만 줄 수 있어 킬 전후(tones→info_only)가 섞인 창을 재현하지 못한다.
+    D7 은 '기록을 다시 만들어 보는' 검사이므로 오늘의 모드가 아니라 **그날 장부가 적어 둔 모드**로 굴린다.
+    배수는 info_only 행에서도 그대로 넘긴다 — daily 가 그날 p3_state_mult 를 기록했기 때문이다."""
+    prev = float(init_w) if (init_w is not None and math.isfinite(float(init_w))) else None
+    mprev = float(init_m) if (init_m is not None and math.isfinite(float(init_m))) else math.nan
+    wt = tgt.to_numpy(dtype=float)
+    mu = mult.reindex(tgt.index).to_numpy(dtype=float)
+    out: list[float] = []
+    for t in range(len(wt)):
+        w = float(SZ.step(wt[t], mu[t], mprev, prev, bool(week_end[t]), deploy=bool(deployed[t]))[0])
+        out.append(w if math.isfinite(w) else math.nan)
+        if math.isfinite(w):
+            prev = w
+        if math.isfinite(mu[t]):
+            mprev = float(mu[t])
+    return out
+
+
+def _recompute_frame(prev_rows: pd.DataFrame, feats: pd.DataFrame, spy_close: pd.Series, obs: pd.DataFrame,
+                     thetas, m_dep, params, sigma_target: float, deploy: bool, warns: list[str],
+                     sessions: int = 20) -> pd.DataFrame | None:
+    """D7 정합 검사용 최근 `sessions` 세션 재계산 프레임 (prob_dd5_20 · p3_hmm_p_high · p3_w_exec).
+
+    장부는 기록이므로 다시 쓰지 않는다 — 여기서는 **같은 코드가 같은 값을 다시 내는지**만 본다.
+    확률은 그날 장부가 적어 둔 모델로, P_high 는 그날 적어 둔 θ 로 재계산한다(재적합 경계를 오인하지 않게)."""
+    if prev_rows is None or not len(prev_rows):
+        return None
+    sub = prev_rows.tail(int(sessions)).copy()
+    idx = pd.DatetimeIndex(pd.to_datetime(sub["asof"], errors="coerce"))
+    out = pd.DataFrame(index=range(len(sub)))
+    out["asof"] = [d.strftime("%Y-%m-%d") if pd.notna(d) else None for d in idx]
+    probs, phighs = [], []
+    filt_cache: dict[str, pd.Series] = {}
+    for i, d in enumerate(idx):
+        if pd.isna(d) or d not in feats.index:
+            probs.append(math.nan)
+        else:
+            try:
+                mm = _model_for_date(prev_rows, d, m_dep, params, warns)
+                probs.append(float(mm.predict_one(feats.loc[d])))
+            except (ValueError, KeyError) as e:
+                warns.append(f"D7 재계산: {d:%Y-%m-%d} 확률 재계산 실패({type(e).__name__}: {e})")
+                probs.append(math.nan)
+        tid = sub.iloc[i].get("p3_hmm_theta_id")
+        th = _theta_by_id(thetas, tid) if not L._is_missing(tid) else None
+        if th is None or pd.isna(d):
+            phighs.append(math.nan)
+            continue
+        if str(tid) not in filt_cache:
+            filt_cache[str(tid)] = RG.filter_probabilities(obs, th)
+        s = filt_cache[str(tid)]
+        phighs.append(float(s.loc[d]) if d in s.index else math.nan)
+    out["prob_dd5_20"] = probs
+    out["p3_hmm_p_high"] = phighs
+    # 비중 경로: 장부의 직전 값에서 이어 굴린다(§6.1.5 '재개 안전') — 같은 규칙이면 같은 경로가 나와야 한다.
+    # 되감기는 **그날 장부가 적어 둔 것**으로 한다. 오늘의 배치 여부·오늘의 σ_T 로 과거 행을 다시 판단하면
+    # 킬(tones→info_only)이나 D_max 변경이 곧바로 D7 오경보가 되고, 그러면 오늘 행을 쓰지 못해 장부가
+    # 멈추므로 같은 20행이 영원히 남아 매일 같은 실패가 되풀이된다(킬이 걸린 바로 그날 daily 가 죽는다).
+    w_rec = [math.nan] * len(sub)
+    try:
+        if "p2_state" in sub.columns:
+            sig = SZ.ewma_vol(spy_close).reindex(idx)
+            mult = SZ.state_multiplier(pd.Series(sub["p2_state"].astype(str).to_numpy(), index=idx))
+            st = pd.Series(float(sigma_target), index=idx, dtype=float)   # 그날의 σ_T (없는 옛 행은 오늘 값)
+            if "p3_sigma_target" in sub.columns:
+                rec = pd.to_numeric(pd.Series(sub["p3_sigma_target"].to_numpy(), index=idx), errors="coerce")
+                st = rec.where(np.isfinite(rec.to_numpy(dtype=float)), float(sigma_target))
+            tgt = pd.Series(math.nan, index=idx, dtype=float)
+            for v in sorted({float(x) for x in st.to_numpy(dtype=float)}):  # 예산이 바뀐 창은 구간별로 계산
+                sel = st.to_numpy(dtype=float) == v
+                tgt.iloc[sel] = SZ.exposure_target(sig[sel], mult[sel], v)["w_target"].to_numpy(dtype=float)
+            # 배치 여부도 그날 것: reason 'info_only' 인 행은 비중을 제안하지 않고 직전 값을 이어 간 행이다
+            dep = (sub["p3_w_reason"].astype(str).to_numpy() != "info_only") if "p3_w_reason" in sub.columns                 else np.full(len(sub), bool(deploy))
+            seed = _prev_p3_row(prev_rows.iloc[:-len(sub)]) if len(prev_rows) > len(sub) else None
+            init_w = None if seed is None else _fnum(seed.get("p3_w_exec"))
+            init_m = None if seed is None else _fnum(seed.get("p3_state_mult"))
+            init_w = None if init_w is None or not math.isfinite(init_w) else init_w
+            init_m = None if init_m is None or not math.isfinite(init_m) else init_m
+            ex = SZ.execute(tgt, mult, init_w=init_w, init_mult=init_m)
+            if bool(np.all(dep)):                                 # 전부 배치된 창 — 기존 경로 그대로
+                w_rec = [float(v) if math.isfinite(float(v)) else math.nan
+                         for v in ex["w_exec"].to_numpy(dtype=float)]
+            else:                                                 # 모드가 섞인 창 — 행마다의 모드로 다시 굴린다
+                w_rec = _replay_weights(tgt, mult, dep, ex["week_end"].to_numpy(dtype=bool), init_w, init_m)
+    except Exception as e:                                        # noqa: BLE001 - 조용한 실패 금지
+        # 여기서 삼키면 w_rec 이 전부 NaN 으로 남아 replay_check 가 20세션 전부를 '불일치' 로 세고,
+        # D7 이 원인 대신 엉뚱한 정합 실패를 보고한다. 원인을 그대로 들고 멈춘다(§2).
+        raise P3Fatal(f"D7 재계산: 비중 경로를 다시 만들지 못했다({type(e).__name__}: {e}) — "
+                      "장부 불일치가 아니라 재계산 코드의 문제다. 원인을 고치기 전에는 오늘 행을 쓰지 않는다") from e
+    out["p3_w_exec"] = w_rec
+    return out
+
+
+def p3_artifacts_state(results_dir: Path) -> tuple[bool, bool]:
+    """(model_p3.json 존재, hmm_p3.json 존재) — 둘 다 없으면 그 results 디렉터리는 아직 Phase 3 를 짓지 않은 것이다."""
+    return ((results_dir / MODEL_P3_PATH.name).exists(), (results_dir / HMM_P3_PATH.name).exists())
+
+
+def compute_p3(bundle, asof: pd.Timestamp, ledger_path: Path, results_dir: Path, p2: dict, feats: pd.DataFrame,
+               warns: list[str], *, own_results: bool = True) -> dict:
+    """§11 daily 의 Phase 3 블록. 반환 {"ledger": P3 열 dict, "card": p3_card 입력, "log": 한 줄,
+    "effective_mode": str, "kill": dict, "reference": dict, "deploy_sizing": bool|None, "recomputed": DataFrame|None}.
+
+    **절대 재적합하지 않는다**: model_p3.json · hmm_p3.json 을 읽기만 하고, sha 가 어긋나면 exit 1(코드가 산출물보다
+    새롭다). p2 가 info_only 이거나 킬이 있으면 유효 모드가 info_only 라 **비중·톤·상태를 제안하지 않는다**(§15 단계 0):
+    변동성 단독 w_vol 은 reason `info_only` 로 장부에만 남는다."""
+    require_p3_contract()
+    asof_s = asof.strftime("%Y-%m-%d")
+    model_path, hmm_path = results_dir / MODEL_P3_PATH.name, results_dir / HMM_P3_PATH.name
+    for p in (model_path, hmm_path):
+        if not p.exists():
+            raise P3Fatal(f"{p} 없음 — scripts/run_phase3.py(주간 작업)가 먼저 만들어야 한다. daily 는 재적합하지 않는다")
+    m3 = _load_json(model_path)
+    thetas, theta_live = RG.load_thetas(hmm_path)
+    if theta_live is None:
+        theta_live = thetas[-1] if thetas else None
+    if theta_live is None:
+        raise P3Fatal(f"{hmm_path.name} 에 θ 가 없다 — run_phase3.py 를 다시 실행하라")
+    reg_now, siz_now = EN.registry_sha256(), SZ.sizing_sha256()
+    if m3.get("registry_sha") != reg_now or m3.get("sizing_sha") != siz_now:
+        raise P3Fatal(f"model_p3.json 의 registry_sha {str(m3.get('registry_sha'))[:12]}/sizing_sha "
+                      f"{str(m3.get('sizing_sha'))[:12]} 가 현재 코드({reg_now[:12]}/{siz_now[:12]})와 다름 — "
+                      "코드가 산출물보다 새롭다: run_phase3.py 를 다시 실행하라 (daily 는 재적합 금지)")
+
+    p3_warns: list[str] = []
+    kill_record = results_dir / KILL_RECORD_PATH.name
+    kill_manual = results_dir / KILL_MANUAL_PATH.name
+    eff = TR.effective_mode(p2["card"]["deploy_mode"], m3.get("deploy_mode"),
+                            kill_record_path=kill_record, kill_manual_path=kill_manual)
+    deploy = eff == "tones"
+    if (kill_record.exists() or kill_manual.exists()) and deploy:
+        raise P3Fatal("킬 기록이 있는데 유효 모드가 info_only 가 아니다 — track.effective_mode 계약 위반(§8.3)")
+
+    # 주간 산출물(시나리오 표·참조 분포·예산 문장). 없으면 회색 'n/a' 로 내려간다 — 실패는 아니다(§7)
+    sp3 = {}
+    sp3_path = results_dir / SUMMARY_P3_NAME
+    if sp3_path.exists():
+        try:
+            sp3 = _load_json(sp3_path)
+        except (OSError, ValueError) as e:
+            p3_warns.append(f"{SUMMARY_P3_NAME} 읽기 실패({type(e).__name__}: {e}) → 시나리오·참조 분포 없음")
+    else:
+        p3_warns.append(f"{SUMMARY_P3_NAME} 없음 → 시나리오 3줄·참조 분포·예산 문장 없음(주간 작업을 실행하라)")
+    reference = sp3.get("reference") if isinstance(sp3.get("reference"), dict) else {}
+    sizing_cfg = m3.get("sizing") if isinstance(m3.get("sizing"), dict) else {}
+    sigma_target = _fnum(sizing_cfg.get("sigma_target"))
+    d_max = _fnum(sizing_cfg.get("d_max"))
+    if not math.isfinite(sigma_target):
+        raise P3Fatal("model_p3.json.sizing.sigma_target 이 없다 — 비중 규칙의 목표를 추측하지 않는다")
+    deploy_sizing = m3.get("deploy_sizing")
+    if deploy_sizing is False:
+        p3_warns.append("유지 조건 위반(§6.4) → 비중 블록 숨김(장부는 계속 기록)")
+
+    # 1) 변동성·비중 (완성 봉 종가만)
+    spy_close = bundle.spy_ohlc["Close"].astype(float).loc[:asof]
+    sigma_s = SZ.ewma_vol(spy_close, asof=asof)
+    sigma_t = float(sigma_s.loc[asof]) if asof in sigma_s.index else math.nan
+    prev_rows = _prev_p2_rows(ledger_path, asof_s)
+    prev = _prev_p3_row(prev_rows)
+    state_today = p2["ledger"]["p2_state"]
+    mult_s = SZ.state_multiplier(pd.Series([state_today], index=[asof]))
+    mult_t = float(mult_s.iloc[0]) if deploy else math.nan
+    et = SZ.exposure_target(pd.Series([sigma_t], index=[asof]), pd.Series([mult_t], index=[asof]), sigma_target)
+    w_vol, w_target = float(et["w_vol"].iloc[0]), float(et["w_target"].iloc[0])
+    prev_w = _fnum(prev.get("p3_w_exec")) if prev is not None else math.nan
+    prev_m = _fnum(prev.get("p3_state_mult")) if prev is not None else math.nan
+    week_end = bool(CAL.is_period_end(asof, "W"))
+    w_exec, w_reason = SZ.step(w_target, mult_t, prev_m, prev_w, week_end, deploy=deploy)
+    if w_reason == "input_missing":
+        p3_warns.append(f"비중 입력 결측(σ̂ {sigma_t} · 상태 {state_today}) → 직전 비중 유지(1.0 복귀 금지)")
+    thr = SZ.next_thresholds(w_exec, sigma_target, mult_t, asof)
+
+    # 2) 국면 (전방 필터만; 어제 값에서 한 걸음과 1e-7 안에서 일치해야 한다)
+    obs = RG.observations(spy_close, asof=asof)
+    p_high_s = RG.filter_probabilities(obs, theta_live)
+    p_high = float(p_high_s.loc[asof]) if asof in p_high_s.index else math.nan
+    one_step_ok = None
+    if prev is not None and not L._is_missing(prev.get("p3_hmm_theta_id")) \
+            and str(prev.get("p3_hmm_theta_id")) == str(theta_live.theta_id):
+        prev_ph = _fnum(prev.get("p3_hmm_p_high"))
+        if math.isfinite(prev_ph) and math.isfinite(p_high) and asof in obs.index:
+            step_v = RG.one_step(prev_ph, obs.loc[asof], theta_live)
+            one_step_ok = bool(abs(step_v - p_high) < float(HMM_P3["tol_prob"]))
+            if not one_step_ok:
+                p3_warns.append(f"국면 한 걸음 검사: 어제 P_high 에서 이어 계산한 {step_v:.10f} 와 전체 필터 "
+                                f"{p_high:.10f} 의 차 {abs(step_v - p_high):.2e} > {HMM_P3['tol_prob']:.0e} "
+                                "— 종가 이력이 바뀌었을 수 있다(D10 이 센다)")
+    x_hmm, p_h = math.nan, math.nan
+    if math.isfinite(p_high):
+        clip = float(HMM_P3["clip"])
+        x_hmm = float(RG.logit(min(max(p_high, clip), 1.0 - clip)))
+        platt = m3.get("platt") if isinstance(m3.get("platt"), dict) else {}
+        b = _fnum((platt.get("coef") or {}).get(EN.PLATT_FEATURE))
+        a = _fnum(platt.get("intercept"))
+        if math.isfinite(a) and math.isfinite(b):
+            p_h = float(1.0 / (1.0 + math.exp(-(a + b * x_hmm))))
+        else:
+            p3_warns.append("model_p3.json.platt 계수가 없어 멤버 H 확률을 기록하지 못했다")
+    ks20 = RG.k_step(theta_live, p_high) if math.isfinite(p_high) else {"p_k": math.nan, "q_k": math.nan,
+                                                                        "k": int(HMM_P3["turn_h"])}
+    dwell = None
+    try:
+        a_arr = np.asarray(theta_live.A, dtype=float)
+        dwell = float(1.0 / (1.0 - a_arr[1, 1])) if a_arr[1, 1] < 1.0 else None
+    except (TypeError, ValueError, IndexError):
+        dwell = None
+    gauge = ("낮음" if p_high < 0.2 else "중간" if p_high < 0.8 else "높음") if math.isfinite(p_high) else ""
+
+    # 3) 멤버 · 불일치 구간 (표시 전용; 그림자는 생산 확률에 들어가지 않는다)
+    statuses = EN.effective_statuses(m3, asof)
+    hidden_gauge = statuses.get("H") in ("candidate_rejected", "killed")
+    members = {"p2": _fnum(p2["ledger"]["prob_dd5_20"]), "M1": _fnum(p2["ledger"]["p2_p_m1"]), "H": p_h}
+    hist = prev_rows.tail(int(ENSEMBLE_P3["disagree_flag"]["sessions"]) + 4) if len(prev_rows) else prev_rows
+    frame_idx, rows = [], []
+    if len(hist):
+        for _, r in hist.iterrows():
+            frame_idx.append(pd.Timestamp(r["asof"]))
+            rows.append({"p2": _fnum(r.get("prob_dd5_20")), "M1": _fnum(r.get("p2_p_m1")), "H": _fnum(r.get("p3_p_h")),
+                         "lo": _fnum(r.get("p2_lo")), "hi": _fnum(r.get("p2_hi"))})
+    frame_idx.append(asof)
+    rows.append({**members, "lo": _fnum(p2["ledger"]["p2_lo"]), "hi": _fnum(p2["ledger"]["p2_hi"])})
+    dfm = pd.DataFrame(rows, index=pd.DatetimeIndex(frame_idx))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        dis = EN.disagreement(dfm[["p2", "M1", "H"]], statuses, dfm["lo"], dfm["hi"])
+    p3_warns += [f"등록부: {m}" for m in _messages(caught)]
+    d_row = dis.loc[asof]
+    lo, hi = _fnum(d_row.get("lo")), _fnum(d_row.get("hi"))
+    band_src, flag = str(d_row.get("src") or ""), bool(d_row.get("flag"))
+
+    # 4) 시나리오 (세기만 한다; 표가 없으면 문장을 만들지 않는다)
+    scen = {}
+    dd_now = {}
+    try:
+        dd_now = SC.current_drawdown(spy_close, asof)
+        tables = sp3.get("scenarios") or {}
+        if tables:
+            scen = SC.today_context(_fnum(p2["ledger"]["prob_dd5_20"]), state_today,
+                                    _fnum(p2["card"].get("vix")), _fnum(p2["ledger"]["p2_har_fc_20"]),
+                                    float(spy_close.loc[asof]), tables, dd_now)
+        else:
+            p3_warns.append("시나리오 표 없음 → 카드에 3줄을 만들지 않는다(n·n_eff·구간 없이 표시 금지)")
+    except Exception as e:                                         # noqa: BLE001 - 조용한 실패 금지
+        p3_warns.append(f"시나리오 문맥 실패({type(e).__name__}: {e})")
+    # 20세션 80% 밴드는 시나리오 표가 없어도 기록한다 — 장부의 ret20_in_vix80/har80 채점이 여기에 달려 있다
+    rng = (scen.get("range") or {}) if isinstance(scen, dict) else {}
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        spot_now = float(spy_close.loc[asof])
+        rng_vix = rng.get("vix") or SC.implied_range(spot_now, _fnum(p2["card"].get("vix")))
+        rng_har = rng.get("har") or SC.har_range(spot_now, _fnum(p2["ledger"]["p2_har_fc_20"]))
+    p3_warns += [f"시나리오 범위: {m}" for m in _messages(caught)]
+
+    def _band(d, key="80"):
+        v = (d or {}).get(key)
+        return (_fnum(v[0]), _fnum(v[1])) if isinstance(v, (list, tuple)) and len(v) == 2 else (math.nan, math.nan)
+    vix_lo, vix_hi = _band(rng_vix)
+    har_lo, har_hi = _band(rng_har)
+
+    # 5) 경보(D1~D11) · 킬룰 — 장부는 오늘 행을 담기 전 상태(D7 은 기록된 20세션의 재현이다)
+    ledger_df = L._read(ledger_path) if ledger_path.exists() else None
+    recomputed = None
+    alarms: list[dict] = []
+    if ledger_df is not None and len(ledger_df):
+        recomputed = _recompute_frame(prev_rows, feats, spy_close, obs, thetas, p2["model_dep"], p2["params"],
+                                      sigma_target, deploy, p3_warns)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            alarms = TR.alarms(ledger_df, reference, feats_today=feats.iloc[-1], asof=asof,
+                               recomputed=recomputed, notes=p3_warns)
+        p3_warns += [f"경보: {m}" for m in _messages(caught)]
+        if alarms and own_results:
+            n_written = TR.append_alarms([{**a, "asof": a.get("asof") or asof_s} for a in alarms],
+                                         results_dir / ALARMS_PATH.name)
+            if n_written:
+                p3_warns.append(f"경보 {n_written}건을 {ALARMS_PATH.name} 에 기록")
+        elif alarms:
+            p3_warns.append(f"경보 {len(alarms)}건 — 장부와 results 디렉터리가 짝이 아니어서 {ALARMS_PATH.name} 에 쓰지 않는다")
+    d7 = [a for a in alarms if str(a.get("code")) == "D7_parity"]
+    if d7:
+        raise P3Fatal(f"D7 정합 실패 — 최근 {P3_DRIFT['D7_parity']['sessions']}세션 재계산이 장부와 다르다: {d7[0]} "
+                      "(장부는 기록이라 고치지 않는다. 원인을 찾기 전에는 오늘 행을 쓰지 않는다)")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        ks = TR.kill_status(ledger_df if ledger_df is not None else pd.DataFrame(), spy_close, asof,
+                            prev=m3.get("kill"), members=statuses)
+    p3_warns += [f"킬룰: {m}" for m in _messages(caught)]
+    p3_warns += [f"킬룰: {m}" for m in (ks.get("notes") or [])]
+    killed_now = False
+    if ks.get("killed") or ks.get("evaluated_now"):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            killed_now = bool(TR.kill_apply(ks, model_p3_path=model_path, record_path=kill_record))
+        p3_warns += [f"킬룰 적용: {m}" for m in _messages(caught)]
+        if killed_now:
+            p3_warns.append("킬룰 발동 — model_p3.json.deploy_mode = info_only · kill_record.json 기록(sticky)")
+            eff, deploy = "info_only", False
+
+    run_id = f"p3-{asof_s}"
+    ledger_cols = {
+        "p3_sigma_ewma": sigma_t, "p3_sigma_har_fc": _fnum(p2["ledger"]["p2_har_fc_20"]),
+        "p3_sigma_target": sigma_target, "p3_d_max": d_max, "p3_w_vol": w_vol,
+        "p3_state_mult": mult_t, "p3_w_target": w_target, "p3_w_exec": w_exec, "p3_w_reason": w_reason,
+        "p3_next_check": str(thr.get("next_check") or ""), "p3_sigma_down": _fnum(thr.get("sigma_down")),
+        "p3_sigma_up": _fnum(thr.get("sigma_up")),
+        "p3_deploy_sizing": (math.nan if deploy_sizing is None else float(bool(deploy_sizing))),
+        "p3_hmm_p_high": p_high, "p3_hmm_p20": _fnum(ks20.get("p_k")), "p3_hmm_q20": _fnum(ks20.get("q_k")),
+        "p3_x_hmm": x_hmm, "p3_p_h": p_h, "p3_hmm_theta_id": str(theta_live.theta_id), "p3_hmm_gauge": gauge,
+        "p3_members": members, "p3_lo": lo, "p3_hi": hi, "p3_band_src": band_src,
+        "p3_disagree_flag": (1.0 if flag else 0.0),
+        "p3_range_vix_lo": vix_lo, "p3_range_vix_hi": vix_hi,
+        "p3_range_har_lo": har_lo, "p3_range_har_hi": har_hi,
+        "p3_scen_bin": str(((scen.get("bin_row") or {}) if isinstance(scen, dict) else {}).get("bin") or ""),
+        "p3_dd_from_ath": _fnum(dd_now.get("dd_from_ath")),
+        "p3_kill_state": str(ks.get("state") or "not_started"), "p3_kill_n_ep": _fnum(ks.get("episodes5")),
+        "p3_kill_months": _fnum(ks.get("months")),
+        "p3_deploy_mode": str(m3.get("deploy_mode") or "info_only"), "p3_effective_mode": eff,
+        "p3_alarms": ",".join(sorted({str(a.get("code")) for a in alarms})),
+        "p3_registry_sha": reg_now, "p3_sizing_sha": siz_now,
+        "p3_input_missing": ("" if (math.isfinite(sigma_t) and math.isfinite(p_high)) else
+                             "; ".join(x for x in (("σ̂ 없음" if not math.isfinite(sigma_t) else ""),
+                                                   ("P_high 없음" if not math.isfinite(p_high) else "")) if x)),
+        "p3_run_id": run_id,
+    }
+    card = {
+        "asof": asof_s, "effective_mode": eff, "p2_deploy_mode": p2["card"]["deploy_mode"],
+        "p3_deploy_mode": m3.get("deploy_mode"), "deploy_sizing": deploy_sizing,
+        "kill_record": kill_record.exists(), "kill_manual": kill_manual.exists(),
+        "sizing": {"w_exec": w_exec, "w_vol": w_vol, "w_target": w_target, "mult": mult_t, "sigma": sigma_t,
+                   "sigma_target": sigma_target, "d_max": d_max, "state": state_today, "reason": w_reason,
+                   "changed": bool(math.isfinite(prev_w) and math.isfinite(w_exec) and abs(prev_w - w_exec) > 1e-12),
+                   "prev_w_exec": (None if not math.isfinite(prev_w) else prev_w), "thresholds": thr},
+        "budget": {"d_max": d_max, "sigma_target": sigma_target,
+                   "sentence": ((sp3.get("sizing") or {}).get("budget_sentence")),
+                   "short": ((sp3.get("sizing") or {}).get("honest_reading") or [None])[0]},
+        "members": members, "disagreement": {"lo": lo, "hi": hi, "width": _fnum(d_row.get("width")),
+                                             "src": band_src, "flag": flag},
+        "rung": p2["card"].get("prob_rung"), "scenarios": scen, "drawdown": dd_now,
+        "regime": {"p_high": p_high, "q20": _fnum(ks20.get("q_k")), "k_step": ks20, "dwell": dwell,
+                   "theta_id": str(theta_live.theta_id), "hidden": hidden_gauge},
+        "kill": ks, "alarms": alarms, "acceptance": p2["card"].get("acceptance"),
+        # 킬 검정력은 주간 자기검사(kill_replay)가 만든 값만 카드에 싣는다 — 없으면 카드가 그 사실을 쓴다(§16.7)
+        "kill_power": (sp3.get("kill_power") if isinstance(sp3.get("kill_power"), dict) else None),
+        "registry_sha": reg_now, "sizing_sha": siz_now, "model_id": p2["ledger"]["p2_prob_model_id"],
+        "theta_id": str(theta_live.theta_id), "spec_sha256": p2["card"].get("model", {}).get("spec_sha256"),
+        "statuses": statuses, "warnings": p3_warns,
+    }
+    warns.extend(f"P3: {w}" for w in p3_warns)
+    log = (f"[daily] P3 유효 모드 {eff} · w_exec {'—' if not math.isfinite(w_exec) else f'{w_exec:.2f}'} "
+           f"({w_reason}) · σ̂ {sigma_t * 100:.1f}% / 목표 {sigma_target * 100:.0f}% · 배수 "
+           f"{'—' if not math.isfinite(mult_t) else f'{mult_t:.2f}'} · P(고변동) "
+           f"{'—' if not math.isfinite(p_high) else f'{p_high * 100:.1f}%'} ({gauge or '—'}) · 멤버 H "
+           f"{'—' if not math.isfinite(p_h) else f'{p_h * 100:.1f}%'} · 구간 "
+           f"[{lo * 100:.1f}%, {hi * 100:.1f}%] ({band_src}) · 킬 {ks.get('state')} "
+           f"({ks.get('episodes5')}/{KILL_P3['min_episodes']} 에피소드 · {ks.get('months')}/{KILL_P3['min_months']}개월)"
+           f" · 경보 {ledger_cols['p3_alarms'] or '없음'}")
+    return {"ledger": ledger_cols, "card": card, "log": log, "effective_mode": eff, "kill": ks,
+            "reference": reference, "deploy_sizing": deploy_sizing, "recomputed": recomputed,
+            "killed_now": killed_now, "alarms": alarms}
 
 
 def run(args) -> dict:
@@ -655,9 +1086,29 @@ def run(args) -> dict:
     p2 = compute_p2(bundle_complete, asof, ledger_path, results_dir, warns)
     _log(p2["log"])
 
-    # 4) 장부: completed 가 정식 행(P2 열 포함), faithful 톤은 추가 열
+    # 3c) Phase 3 (재적합·채택 금지 — model_p3.json · hmm_p3.json 읽기 전용; §11)
+    #     장부와 results 디렉터리가 짝일 때만 alarms.csv·track_record_p3.json 을 쓴다(남의 산출물을 덮지 않는다).
+    own_results = Path(ledger_path).resolve().parent == results_dir.resolve()
+    has_model, has_hmm = p3_artifacts_state(results_dir)
+    p3 = None
+    if args.no_p3:
+        warns.append("--no-p3 → Phase 3 블록 생략(장부 P3 열·카드 없음)")
+    elif not (has_model or has_hmm) and not args.require_p3:
+        # 아직 주간 작업이 이 results 디렉터리에서 한 번도 돌지 않았다 → 조용히가 아니라 **소리 내어** 건너뛴다.
+        # 산출물이 하나라도 있는데 짝이 없거나 sha 가 어긋나면 아래 compute_p3 가 exit 1 한다(§11).
+        _log(f"::warning::[daily] {MODEL_P3_PATH.name}·{HMM_P3_PATH.name} 이 {results_dir} 에 없다 → Phase 3 블록 생략. "
+             "scripts/run_phase3.py(주간 작업)를 먼저 실행하라 (--require-p3 면 이 상황도 exit 1)")
+        warns.append(f"Phase 3 산출물 없음({results_dir}) → P3 열·카드 없음. 주간 작업(run_phase3.py)을 실행하라")
+    else:
+        p3 = compute_p3(bundle_complete, asof, ledger_path, results_dir, p2, p2["feats"], warns,
+                        own_results=own_results)
+        _log(p3["log"])
+    p3_ledger = p3["ledger"] if p3 else {}
+
+    # 4) 장부: completed 가 정식 행(P2·P3 열 포함), faithful 톤은 추가 열
     run_id = f"daily-{now_utc:%Y%m%dT%H%M%SZ}"
-    row = {**days["completed"], **p2["ledger"], "run_id": run_id, "recorded_at_utc": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    row = {**days["completed"], **p2["ledger"], **p3_ledger, "run_id": run_id,
+           "recorded_at_utc": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")}
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         appended = L.append_today(row, ledger_path)
@@ -670,16 +1121,25 @@ def run(args) -> dict:
     else:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            filled = _fill_p2_if_empty(ledger_path, asof_s, "completed", p2["ledger"])
+            filled = _fill_p2_if_empty(ledger_path, asof_s, "completed", {**p2["ledger"], **p3_ledger})
         warns += [f"장부: {m}" for m in _messages(caught)]
         _log(f"[daily] 장부에 {asof_s} 행이 이미 있음 → 추가하지 않음" + (" (비어 있던 P2 열만 채움)" if filled else ""))
     spy_complete = bundle.spy_ohlc["Close"].astype(float).loc[:asof]      # 미완성 봉은 결과 열에 쓰지 않는다
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         L.backfill(ledger_path, spy_complete)
-        ls = L.summary(ledger_path, trading_days=bundle.spy_ohlc.index, spy_close=spy_complete)
+        ls = L.summary(ledger_path, trading_days=bundle.spy_ohlc.index, spy_close=spy_complete,
+                       reference=(p3["reference"] if p3 else None), prev_kill=(p3["kill"] if p3 else None),
+                       deploy_sizing=(p3["deploy_sizing"] if p3 else None),
+                       recomputed=(p3["recomputed"] if p3 else None))
     warns += [f"장부: {m}" for m in _messages(caught)]
     warns += [f"장부 P2: {n}" for n in (ls.get("p2", {}).get("notes") or [])]   # 출처 혼재·홀드아웃 잠금 등은 조용히 넘기지 않는다
+    warns += [f"장부 P3: {n}" for n in (ls.get("p3", {}).get("notes") or [])]
+    if p3 is not None and own_results and isinstance(ls.get("p3"), dict) and ls["p3"].get("n_rows"):
+        with warnings.catch_warnings(record=True) as caught:      # 라이브 패널의 단일 원천을 매일 갱신(§8.5)
+            warnings.simplefilter("always")
+            TR.save_summary_p3(ls["p3"], results_dir / TRACK_P3_PATH.name)
+        warns += [f"트랙레코드: {m}" for m in _messages(caught)]
     _log(f"[daily] 장부 {ls.get('n')}행 · 결과 확정 20일 {ls.get('n_with_outcome')} / 60일 {ls.get('n_with_outcome_60')}"
          + (f" · 결측 거래일 {ls.get('n_missing_days')}일" if ls.get("n_missing_days") else "")
          + f" · P2 채점 {ls.get('p2', {}).get('n_scored')}행")
@@ -695,13 +1155,15 @@ def run(args) -> dict:
         "faithful": days["faithful"], "completed": days["completed"],
         "p2": {**p2["card"], "live": ls.get("p2")},
     }
+    if p3 is not None:
+        today["p3"] = {**p3["card"], "track": ls.get("p3")}
     out_html = docs_dir / "index.html"
     RPT.render_index(today, ls, out_html)
     _log(f"[daily] {out_html} 저장 · 경고 {len(warns)}건 · {time.perf_counter() - t0:.1f}s")
     for w in warns:
         _log(f"  - {w}")
     return {"asof": asof_s, "status": status, "appended": appended, "days": days, "ledger_summary": ls, "p2": p2,
-            "warnings": warns, "index_html": out_html}
+            "p3": p3, "warnings": warns, "index_html": out_html}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -711,26 +1173,43 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--now", default=None, help="ET 시각 고정 'YYYY-MM-DD HH:MM' (테스트용)")
     ap.add_argument("--data-dir", default=str(DATA_DIR))
     ap.add_argument("--docs-dir", default=str(DOCS_DIR))
-    ap.add_argument("--results-dir", default=str(RESULTS_DIR), help="model_p2.json · summary_p2.json 위치 (읽기 전용)")
+    ap.add_argument("--results-dir", default=str(RESULTS_DIR),
+                    help="model_p2.json · summary_p2.json · model_p3.json · hmm_p3.json 위치 (읽기 전용)")
     ap.add_argument("--ledger", default=str(L.LEDGER), help=f"장부 CSV 경로 (기본 {L.LEDGER})")
     ap.add_argument("--basket", choices=list(S.BASKETS), default="v0")
+    ap.add_argument("--no-p3", action="store_true", help="Phase 3 블록 생략(디버그)")
+    ap.add_argument("--require-p3", action="store_true",
+                    help="§11 문자 그대로: Phase 3 산출물이 없어도 exit 1 (기본은 둘 다 없으면 경고 후 생략)")
     args = ap.parse_args(argv)
     try:
         res = run(args)
     except P2Fatal as e:
         _log(f"::error::[daily] Phase 2 실패 — {e}")
         return 1
+    except P3Fatal as e:
+        _log(f"::error::[daily] Phase 3 실패 — {e}")
+        return 1
     write_github_output(res)
     return 0
 
 
 def write_github_output(res: dict, path: str | None = None) -> bool:
-    """GitHub Actions 스텝 출력(asof, market_status, appended). $GITHUB_OUTPUT 이 없으면(로컬) 아무것도 하지 않는다."""
+    """GitHub Actions 스텝 출력(asof, market_status, appended + Phase 3: p3_w_exec, p3_reason, kill_state,
+    alarms, effective_mode). $GITHUB_OUTPUT 이 없으면(로컬) 아무것도 하지 않는다.
+
+    Phase 3 블록이 돌지 않은 실행(주간 산출물 없음·--no-p3)에서는 P3 값이 빈 문자열로 나간다 — 키는 항상 있다."""
     gh_out = path if path is not None else os.environ.get("GITHUB_OUTPUT")
     if not gh_out:
         return False
+    lg = ((res.get("p3") or {}).get("ledger") or {})
+    w = _fnum(lg.get("p3_w_exec"))
     with open(gh_out, "a", encoding="utf-8") as f:
         f.write(f"asof={res['asof']}\nmarket_status={res['status']}\nappended={str(bool(res['appended'])).lower()}\n")
+        f.write(f"p3_w_exec={'' if not math.isfinite(w) else f'{w:.2f}'}\n"
+                f"p3_reason={lg.get('p3_w_reason') or ''}\n"
+                f"kill_state={lg.get('p3_kill_state') or ''}\n"
+                f"alarms={lg.get('p3_alarms') or ''}\n"
+                f"effective_mode={lg.get('p3_effective_mode') or ''}\n")
     return True
 
 

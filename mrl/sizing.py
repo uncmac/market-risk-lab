@@ -23,9 +23,9 @@
 계약(§6.6):
     sizing_sha256 · ewma_vol · target_vol · budget_ladder · state_multiplier · exposure_target · step ·
     execute · next_thresholds · run · backtest_table · sensitivities · retention · episode_pnl · rolling_relative
-`mrl/evaluate.py` 는 이 에이전트의 소유가 아니므로 §6.6 의 evaluate 추가분
-(`allocation_from_weights`, `window_distribution`)을 같은 이름·의미로 **여기에** 자체 구현한다
-(배선 단계에서 evaluate 로 옮기거나 재수출하면 된다).
+§6.6 의 evaluate 추가분(`allocation_from_weights`, `window_distribution`)은 계약대로 `mrl/evaluate.py` 에
+**하나만** 구현되어 있고 여기서는 재수출한다 — 이 모듈의 공개 API 는 그대로이며(`sizing.allocation_from_weights`
+는 `evaluate.allocation_from_weights` 와 같은 객체), 백테스트 표·장부의 `rule_ret_20` 이 같은 규약을 쓴다.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ import pandas as pd
 
 from mrl import calendar_us
 from mrl.config import P3, STATE_TO_TONE, TONE_EXPOSURE
-from mrl.evaluate import _perf_stats
+from mrl.evaluate import allocation_from_weights, window_distribution      # noqa: F401 — §6.6 재수출(구현은 evaluate 하나)
 
 __all__ = [
     "SIZING_RULE", "PARAM_COUNT", "TRADING_DAYS", "SIZING_CONSTANTS", "REASONS",
@@ -566,81 +566,11 @@ def run(sigma: pd.Series, states, sigma_target: float, cfg=P3, deploy: bool = Tr
 
 
 # ------------------------------------------------------------------
-# 6. 배분 시뮬 (§6.6 의 evaluate 추가분을 여기에 자체 구현)
+# 6. 배분 시뮬 (§6.6) — 구현은 `mrl/evaluate.py` 에 하나만 둔다
+#    ARCHITECTURE_PHASE3.md §6.6 은 이 두 함수를 evaluate 의 계약으로 적었고, §6.3 백테스트 표와 장부의
+#    rule_ret_20 이 같은 규약·같은 숫자를 써야 하므로 여기서는 **재수출만** 한다
+#    (공개 API 불변: sizing.allocation_from_weights is evaluate.allocation_from_weights).
 # ------------------------------------------------------------------
-def allocation_from_weights(w: pd.Series, spy_close: pd.Series, cost_bps: float = P3["cost_bps"]) -> dict:
-    """비중 경로 → 배분 시뮬 (evaluate.allocation_sim 과 **같은 규약·같은 키**).
-
-    규약: t 종가에 확정된 w[t] 를 t+1 수익률에 적용(점 원칙). 비용은 목표 비중이 바뀔 때만 |Δw|×cost_bps.
-    나머지 (1−w) 는 현금(수익률 0 — 배분 쪽에 보수적). 톤 경로로 만든 w 에서 `allocation_sim` 과 비트 동일."""
-    if not isinstance(w, pd.Series):
-        raise TypeError(f"w 는 pandas Series 여야 함 (받은 형: {type(w).__name__})")
-    _check_index(w, "w")
-    if float(cost_bps) < 0:
-        raise ValueError("cost_bps 는 0 이상이어야 합니다")
-    close = spy_close.dropna()
-    _check_index(close, "spy_close")
-    common = w.index.intersection(close.index)
-    n_unmatched = len(w.index) - len(common)
-    if n_unmatched:
-        warnings.warn(f"비중 {n_unmatched}행이 spy_close 에 없어 배분 시뮬에서 제외됩니다", stacklevel=2)
-    if len(common) < 2:
-        raise ValueError("배분 시뮬에 최소 2 거래일이 필요합니다")
-    close = close.loc[common].astype(float)
-    ww = w.loc[common].astype(float)
-    if ww.isna().any():
-        raise ValueError(f"비중에 결측 {int(ww.isna().sum())}행 — 배분 시뮬 전에 채우거나 잘라야 합니다")
-
-    r = close.pct_change()
-    w_prev = ww.shift(1)
-    dw = (ww - w_prev).abs()
-    cost = dw * (float(cost_bps) / 1e4)
-    ret_strat = ((1.0 + w_prev * r) * (1.0 - cost) - 1.0).iloc[1:]
-    ret_bh = r.iloc[1:]
-    switched = (dw.iloc[1:] > 0)
-
-    st = _perf_stats(ret_strat)
-    bh = _perf_stats(ret_bh)
-    years = st["years"]
-    n_switch = int(switched.sum())
-    return {
-        "start": common[0], "end": common[-1], "n_days": int(len(ret_strat)), "years": float(years),
-        "cagr": st["cagr"], "max_dd": st["max_dd"], "max_dd_date": st["max_dd_date"],
-        "worst_month": st["worst_month"], "worst_month_label": st["worst_month_label"],
-        "total_return": st["total_return"], "ann_vol": st["ann_vol"],
-        "n_switches": n_switch, "switches_per_year": float(n_switch / years) if years > 0 else np.nan,
-        "avg_exposure": float(w_prev.iloc[1:].mean()),
-        "cost_total": float(cost.iloc[1:].sum()),
-        "bh_cagr": bh["cagr"], "bh_max_dd": bh["max_dd"], "bh_max_dd_date": bh["max_dd_date"],
-        "bh_worst_month": bh["worst_month"], "bh_worst_month_label": bh["worst_month_label"],
-        "bh_total_return": bh["total_return"], "bh_ann_vol": bh["ann_vol"],
-        "excess_cagr": st["cagr"] - bh["cagr"],
-        "maxdd_improvement": st["max_dd"] - bh["max_dd"],
-        "exposure_map": None, "cost_bps": float(cost_bps),
-        "series": {"equity": st["_equity"], "equity_bh": bh["_equity"],
-                   "daily_ret": ret_strat, "daily_ret_bh": ret_bh, "exposure": w_prev.iloc[1:]},
-    }
-
-
-def window_distribution(series: pd.Series, L: int, step: int = 21) -> dict:
-    """길이 L 창의 누적수익 분포(참조 분포용). `step` 세션마다 창 하나 — p5/p25/p50/p75/p95·min·max·share<0."""
-    s = pd.Series(series).dropna().astype(float)
-    L = int(L)
-    step = int(step)
-    if L < 2 or step < 1:
-        raise ValueError(f"L ≥ 2, step ≥ 1 이어야 함: L={L}, step={step}")
-    vals = []
-    arr = s.to_numpy()
-    for a in range(0, max(len(arr) - L + 1, 0), step):
-        vals.append(float(np.prod(1.0 + arr[a:a + L]) - 1.0))
-    if not vals:
-        return {"L": L, "step": step, "n": 0, "p5": np.nan, "p25": np.nan, "p50": np.nan,
-                "p75": np.nan, "p95": np.nan, "min": np.nan, "max": np.nan, "share_negative": np.nan}
-    v = np.asarray(vals, dtype=float)
-    q = np.percentile(v, [5, 25, 50, 75, 95])
-    return {"L": L, "step": step, "n": int(len(v)), "p5": float(q[0]), "p25": float(q[1]), "p50": float(q[2]),
-            "p75": float(q[3]), "p95": float(q[4]), "min": float(v.min()), "max": float(v.max()),
-            "share_negative": float((v < 0).mean())}
 
 
 # ------------------------------------------------------------------

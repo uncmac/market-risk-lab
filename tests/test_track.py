@@ -854,3 +854,27 @@ def test_live_start_requires_tones_mode():
     assert track.live_start(led, mode_col=None) == d[0]           # 그림자 멤버 규칙
     led2 = make_ledger(d, mode="info_only")
     assert track.live_start(led2) is None
+
+
+def test_ci_label_is_redacted_at_six_and_twelve_month_stages():
+    """§8.4: 'validated' 는 판정일 전에 나오면 안 된다.
+
+    HORIZON_HIDDEN 은 6m·12m 에 ci_label 을 막아 두었지만 _redact 후보 목록에 그 키가 없어서
+    실제로는 통과했다 — 0-3m 에서만 'ci' 접두사에 우연히 걸렸다.
+    """
+    for stage in ("6m", "12m"):
+        b = track._redact({"n": 130, "brier": 0.1, "bss_clim": 0.2, "ci_bss_clim": [0.01, 0.4],
+                           "ci_label": "validated", "hist_pct": {"63": 50}},
+                          stage, ("brier", "bss", "ci", "hist_pct", "ci_label"))
+        assert b["ci_label"] is None, stage
+        assert "ci_label" in (b.get("hidden") or []) and b.get("hidden_reason")
+        assert b["bss_clim"] == 0.2 and b["ci_bss_clim"] == [0.01, 0.4]   # §8.4 가 허용하는 것은 남는다
+    b36 = track._redact({"ci_label": "validated"}, "36m", ("brier", "bss", "ci", "hist_pct", "ci_label"))
+    assert b36["ci_label"] == "validated"                                  # 판정일 뒤에는 나온다
+
+
+def test_live_panel_six_month_stage_hides_ci_label():
+    d = sessions("2016-01-04", 145)
+    panel = track.live_panel(make_ledger(d, good=True), rising_close(d), REFERENCE, d[-1], unlock_path=None)
+    assert panel["stage"] == "6m"
+    assert panel["vii_skill"].get("ci_label") is None

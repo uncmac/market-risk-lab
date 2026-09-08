@@ -6,6 +6,10 @@
     episode_eval(replay, episodes_df, targets) -> (DataFrame, dict)
     allocation_sim(replay, spy_close, exposure=TONE_EXPOSURE, cost_bps=5) -> dict
     brier(prob, y) -> float ; brier_skill(prob, y, ref_prob) -> float
+    ARCHITECTURE_PHASE3.md §6.6 추가 (적합 파라미터 0 — 세고 복리할 뿐):
+    allocation_from_weights(w, spy_close, cost_bps=5) -> dict   # allocation_sim 과 같은 규약·키; 톤 경로에서 비트 동일
+    window_distribution(series, L, step=21) -> dict             # 참조 분위 p5/p25/p50/p75/p95·min·max·share<0
+    이 둘은 `mrl/sizing.py` 가 재수출한다(구현은 여기 하나뿐 — §6.3 백테스트 표와 장부가 같은 숫자를 쓴다).
     block_bootstrap_ci(values, block, n_boot=2000, ci=0.95, seed=0) -> (lo, hi)
     summarize_v0(replay, targets, episodes5, episodes10, spy_close) -> dict (JSON 직렬화 가능)
 
@@ -25,7 +29,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from mrl.config import HORIZONS, TONES, TONE_EXPOSURE
+from mrl.config import HORIZONS, P3, TONES, TONE_EXPOSURE
 from mrl.targets import Y_COLUMNS, base_rates, independent_blocks
 
 UP_TONES = ("buy", "hold", "neutral")          # 상승 예측으로 간주하는 톤
@@ -514,6 +518,105 @@ def allocation_sim(replay: pd.DataFrame, spy_close: pd.Series, exposure: dict = 
                    "daily_ret": ret_strat, "daily_ret_bh": ret_bh, "exposure": w_prev.iloc[1:]},
     }
     return out
+
+
+# ------------------------------------------------------------------
+# 3b. 비중 경로 배분 시뮬 · 창 분포 (ARCHITECTURE_PHASE3.md §6.6)
+#     이 두 함수의 **유일한 구현**이 여기에 있다. `mrl/sizing.py` 는 같은 이름으로 이것을 재수출하므로
+#     (`sizing.allocation_from_weights is evaluate.allocation_from_weights`) 규약도 숫자도 하나뿐이다.
+#     Phase 3 는 적합 파라미터를 0개 더한다 — 아래 두 함수도 세고 복리할 뿐 아무것도 적합하지 않는다.
+# ------------------------------------------------------------------
+def _check_dt_index(obj, name: str) -> pd.DatetimeIndex:
+    """DatetimeIndex · 오름차순 · 중복 없음 검사 (조용한 실패 금지)."""
+    idx = obj.index if hasattr(obj, "index") else obj
+    if not isinstance(idx, pd.DatetimeIndex):
+        raise TypeError(f"{name} 인덱스는 DatetimeIndex 여야 함 (받은 형: {type(idx).__name__})")
+    if not idx.is_monotonic_increasing:
+        raise ValueError(f"{name} 인덱스는 오름차순이어야 함")
+    if idx.has_duplicates:
+        raise ValueError(f"{name} 인덱스에 중복 날짜가 있음")
+    return idx
+
+
+def allocation_from_weights(w: pd.Series, spy_close: pd.Series, cost_bps: float = P3["cost_bps"]) -> dict:
+    """비중 경로 → 배분 시뮬 (`allocation_sim` 과 **같은 규약·같은 `_perf_stats`·같은 키**).
+
+    규약: t 종가에 확정된 w[t] 를 t+1 수익률에 적용(점 원칙). 비용은 목표 비중이 바뀔 때만 |Δw|×cost_bps.
+    나머지 (1−w) 는 현금(수익률 0 — 배분 쪽에 보수적). 톤 경로로 만든 w(`tone.map(TONE_EXPOSURE)`)를 주면
+    `allocation_sim(replay)` 과 **비트 동일**하다(tests/test_evaluate_p3.py 가 고정).
+    `allocation_sim` 과 다른 점은 두 가지뿐: 입력이 톤이 아니라 비중이고, `exposure_map` 이 None 이다."""
+    if not isinstance(w, pd.Series):
+        raise TypeError(f"w 는 pandas Series 여야 함 (받은 형: {type(w).__name__})")
+    _check_dt_index(w, "w")
+    if float(cost_bps) < 0:
+        raise ValueError("cost_bps 는 0 이상이어야 합니다")
+    close = spy_close.dropna()
+    _check_dt_index(close, "spy_close")
+    common = w.index.intersection(close.index)
+    n_unmatched = len(w.index) - len(common)
+    if n_unmatched:
+        warnings.warn(f"비중 {n_unmatched}행이 spy_close 에 없어 배분 시뮬에서 제외됩니다", stacklevel=2)
+    if len(common) < 2:
+        raise ValueError("배분 시뮬에 최소 2 거래일이 필요합니다")
+    close = close.loc[common].astype(float)
+    ww = w.loc[common].astype(float)
+    if ww.isna().any():
+        raise ValueError(f"비중에 결측 {int(ww.isna().sum())}행 — 배분 시뮬 전에 채우거나 잘라야 합니다")
+
+    r = close.pct_change()                         # r[t] = close[t]/close[t-1]-1
+    w_prev = ww.shift(1)                           # t 의 수익률에 적용되는 비중 = t-1 종가의 비중
+    dw = (ww - w_prev).abs()
+    cost = dw * (float(cost_bps) / 1e4)
+    ret_strat = ((1.0 + w_prev * r) * (1.0 - cost) - 1.0).iloc[1:]
+    ret_bh = r.iloc[1:]
+    switched = (dw.iloc[1:] > 0)
+
+    st = _perf_stats(ret_strat)
+    bh = _perf_stats(ret_bh)
+    years = st["years"]
+    n_switch = int(switched.sum())
+    return {
+        "start": common[0], "end": common[-1], "n_days": int(len(ret_strat)), "years": float(years),
+        "cagr": st["cagr"], "max_dd": st["max_dd"], "max_dd_date": st["max_dd_date"],
+        "worst_month": st["worst_month"], "worst_month_label": st["worst_month_label"],
+        "total_return": st["total_return"], "ann_vol": st["ann_vol"],
+        "n_switches": n_switch, "switches_per_year": float(n_switch / years) if years > 0 else np.nan,
+        "avg_exposure": float(w_prev.iloc[1:].mean()),
+        "cost_total": float(cost.iloc[1:].sum()),
+        "bh_cagr": bh["cagr"], "bh_max_dd": bh["max_dd"], "bh_max_dd_date": bh["max_dd_date"],
+        "bh_worst_month": bh["worst_month"], "bh_worst_month_label": bh["worst_month_label"],
+        "bh_total_return": bh["total_return"], "bh_ann_vol": bh["ann_vol"],
+        "excess_cagr": st["cagr"] - bh["cagr"],
+        "maxdd_improvement": st["max_dd"] - bh["max_dd"],
+        "exposure_map": None, "cost_bps": float(cost_bps),
+        "series": {"equity": st["_equity"], "equity_bh": bh["_equity"],
+                   "daily_ret": ret_strat, "daily_ret_bh": ret_bh, "exposure": w_prev.iloc[1:]},
+    }
+
+
+def window_distribution(series: pd.Series, L: int, step: int = 21) -> dict:
+    """길이 L 창의 누적수익 분포(참조 분포용). `step` 세션마다 창 하나 — p5/p25/p50/p75/p95·min·max·share<0.
+
+    `series` 는 **일별 수익률**(비율)이며 창 수익 = ∏(1+r) − 1. 창이 하나도 안 나오면 n=0 · 분위 NaN
+    (예외가 아니라 빈 분포를 돌려준다 — 호출자가 '참조 없음' 으로 읽는다).
+    주의: `mrl/track.py` 의 같은 이름 함수는 **다른 계약**이다(OOS 프레임 → 롤링 BSS 분포)."""
+    s = pd.Series(series).dropna().astype(float)
+    L = int(L)
+    step = int(step)
+    if L < 2 or step < 1:
+        raise ValueError(f"L ≥ 2, step ≥ 1 이어야 함: L={L}, step={step}")
+    vals = []
+    arr = s.to_numpy()
+    for a in range(0, max(len(arr) - L + 1, 0), step):
+        vals.append(float(np.prod(1.0 + arr[a:a + L]) - 1.0))
+    if not vals:
+        return {"L": L, "step": step, "n": 0, "p5": np.nan, "p25": np.nan, "p50": np.nan,
+                "p75": np.nan, "p95": np.nan, "min": np.nan, "max": np.nan, "share_negative": np.nan}
+    v = np.asarray(vals, dtype=float)
+    q = np.percentile(v, [5, 25, 50, 75, 95])
+    return {"L": L, "step": step, "n": int(len(v)), "p5": float(q[0]), "p25": float(q[1]), "p50": float(q[2]),
+            "p75": float(q[3]), "p95": float(q[4]), "min": float(v.min()), "max": float(v.max()),
+            "share_negative": float((v < 0).mean())}
 
 
 # ------------------------------------------------------------------

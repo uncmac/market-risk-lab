@@ -52,12 +52,25 @@ market-risk-lab/
     targets.py      목표변수(y_sign_h, y_dd5_20, y_dd10_60, y_vol_20, fwd_ret_h …) · 낙폭 에피소드 · 독립 창 수
     evaluate.py     방향 성적표 · 에피소드 평가 · 배분 시뮬 · Brier · 블록 부트스트랩 · summarize_v0
     report.py       backtest_v0.html · index.html 렌더(다크 팔레트, 시스템 폰트, 모바일 대응)
-    ledger.py       track_record.csv append / backfill / summary
-  scripts/        build_cache.py · run_backtest_v0.py · daily.py · selftest.py
-  tests/          parity(필수) · calendar · targets · replay smoke
-  data/           커밋되는 캐시(CSV + meta.json)
-  results/        백테스트 산출물, track_record.csv
-  docs/           GitHub Pages(index.html, backtest_v0.html, .nojekyll)
+    ledger.py       track_record.csv append / backfill / summary (+ P2·P3 열)
+    features.py     Phase 2 특징 x_vix · x_har · x_ma (spec_sha256 계약)
+    vol.py          GK/OV 실현변동성 · HAR 예측
+    model.py        4-파라미터 L2 로지스틱 · 사다리 M0~M3 · model_p2.json
+    calibrate.py    확장창 walk-forward(1월 재적합·20일 퍼지) · 블록 채점 · 채택 판정
+    decision.py     결정층(확률 → 상태; 격상 즉시 · 격하 5세션)
+    events.py       이벤트 표 · 귀속
+    regime.py       2-상태 가우시안 HMM 국면 필터(θ 동결·필터 확률, 적합 파라미터 0 — 그림자)
+    ensemble.py     그림자 멤버 등록부 · 채택 검정(배포 확률에 결합 금지)
+    sizing.py       변동성 목표 비중 규칙(적합 파라미터 0) · 위험예산 D_max
+    scenarios.py    조건부 카운팅 시나리오 · 구간(n·n_eff·Wilson)
+    track.py        드리프트 경보(alarms.csv) · 2단계 킬 규칙 재현 · 라이브 패널
+  scripts/        build_cache.py · run_backtest_v0.py · run_calibration.py · run_backtest_v1.py ·
+                  run_phase3.py · daily.py · selftest.py
+  tests/          parity(필수) · calendar · targets · replay smoke · P2 · P3
+  data/           커밋되는 캐시(CSV + meta.json) — **주간 실행에서만 통째로** 커밋(정합 단위)
+  results/        백테스트 산출물, track_record.csv, summary_p2/p3.json, model_p2/p3.json
+  docs/           GitHub Pages(index.html, backtest_v0.html, backtest_v1.html, calibration_p2.html,
+                  sizing_p3.html, regime_p3.html, track_record.html, .nojekyll)
   reference/      v0 원본 사본(읽기 전용)
   .github/workflows/  daily.yml · weekly.yml
 ```
@@ -103,7 +116,15 @@ python scripts/build_cache.py
 python scripts/run_backtest_v0.py --variant both          # faithful | completed | both, --start/--end 선택
 #    2015~2026(약 2,950거래일) 한 변형에 10분 이내가 목표
 
-# 3) 오늘 판정: update_daily → 완성 봉 판정(faithful·completed) → 장부 append/backfill → docs/index.html
+# 3) Phase 2 보정: walk-forward → 채택 판정 → results/{model_p2,summary_p2}.json · docs/calibration_p2.html
+python scripts/run_calibration.py --acceptance-rule amended --acceptance-blocks both
+python scripts/run_backtest_v1.py --all-configs            # 결정층 v1 → docs/backtest_v1.html
+
+# 4) Phase 3(정보 전용): HMM 국면 → 그림자 앙상블 → 변동성 목표 비중 → 시나리오 → 킬룰 재현
+python scripts/run_phase3.py --all-sensitivities
+#    results/summary_p3.json · docs/{sizing_p3,regime_p3,track_record}.html (로컬 ~20초)
+
+# 5) 오늘 판정: update_daily → 완성 봉 판정(faithful·completed) → 장부 append/backfill → docs/index.html
 python scripts/daily.py
 #    장 마감(16:00 ET) 전에 돌리면 "미완성" 경고와 함께 전일 기준으로 기록한다
 ```
@@ -112,7 +133,10 @@ python scripts/daily.py
 
 ```bash
 pytest -q                      # test_parity(비트 단위 동일성) · test_calendar · test_targets · test_replay_smoke
-python scripts/selftest.py     # 캐시 자기점검: 빈 열 · 유령 행 · 최근성
+python scripts/selftest.py     # 캐시 자기점검(빈 열 · 유령 행 · 최근성) + P2 절(model_p2 spec·파라미터 수·
+                               #   장부 P2 열) + P3 절(registry_sha · sizing_sha · θ guard · smoothed 호출 금지 ·
+                               #   킬룰/deploy_mode 정합). 가격은 주간 실행에서만 커밋되므로 주 후반 새 클론에서는
+                               #   최근성 검사에 `--max-age-days 8` 이 필요할 수 있다
 ```
 
 산출물을 보려면 `docs/index.html`, `docs/backtest_v0.html` 을 브라우저에서 연다(자체 완결 HTML, 외부 자원 없음).
@@ -149,6 +173,17 @@ python scripts/selftest.py     # 캐시 자기점검: 빈 열 · 유령 행 · �
 * **독립 창 수(n_blocks)**: 겹치지 않는 20일(또는 60일) 창의 수. 적중률의 실질 표본 크기는 n 이 아니라 이 숫자다.
 * **대체 규약**: 데이터가 없는 구간의 신호(P3·P6)는 v0 라이브에서 "조회 실패 시 가중치 제외"하는 것과 같은 방식으로 제외한다.
 
+### `docs/sizing_p3.html` · `docs/regime_p3.html` · `docs/track_record.html` — Phase 3 (정보 전용)
+
+* `sizing_p3.html` — 변동성 목표 비중 규칙(적합 파라미터 0)의 성적표: 세 창 백테스트, D_max 사다리, 유지 조건
+  (a)~(f), 63/126/252 세션 창의 규칙 − 보유. **가격은 표에서 읽는다**(산문 수치는 표에서 생성된다).
+* `regime_p3.html` — 2-상태 HMM 국면 게이지와 그림자 등록부(멤버·K_s/K_u·상태·장부 번호·채택 검정). 그림자
+  멤버는 생산 확률에 **들어가지 않는다**.
+* `track_record.html` — 라이브 장부 vs 백테스트 패널(§8.5), 드리프트 경보 D1~D11, 확률 구간 표·결정 상태 표
+  (n·n_eff·Wilson; n_eff < 20 은 회색), 2단계 킬 규칙 진행과 검정력.
+* p2 가 `info_only` 이므로 **가중치·상태 카드는 표시되지 않는다**(`ARCHITECTURE_PHASE3.md` §15 단계 0). 세 페이지는
+  변동성 전용 비중 규칙·국면 게이지·시나리오·구간만 회색 정보로 보여 주고 톤·노출 권고를 주장하지 않는다.
+
 ### `results/track_record.csv` — 장부
 
 열: `asof, recorded_at_utc, variant, states(8개 신호), score_d/w/m, overall_d/w/m, tone, spy_close, vix_close, prob_dd5_20, run_id`
@@ -163,7 +198,7 @@ python scripts/selftest.py     # 캐시 자기점검: 빈 열 · 유령 행 · �
 |---|---|---|
 | **1** | 캐시 · v0 동결 포팅(parity) · 목표변수/에피소드 · 정직한 백테스트 리포트 · 일일 장부 · 자동화 | 진행 중 |
 | **2** | 보정 모델: `y_dd5_20` 확률 추정. **적합 파라미터 최대 5개**(구현: 정확히 4개), 확장창 walk-forward(연 1회 재적합, 20거래일 퍼지, 블록 18~24개월). 홀드아웃 `2024-09-01` 이후는 최종 검증 1회 외 접근 금지. 채택 조건: 모든 블록에서 Brier skill(vs 기저율) > 0 **이고** VIX 내재 확률 대비 skill ≥ 0. 위반 시 v0 유지. 실험은 `VALIDATION.md` §8 장부에 번호를 붙여 기록 | 구현 완료 — 실험 #2 literal 실패 → 장부 #2a **경로 (b)**(완화안, post hoc) 채택, 그러나 장부 **#2d**(소유자 2차 결정 2026-09-08)로 판정은 사전 등록된 24개월·18개월 두 표의 **교집합**이어야 한다 → 24개월 표는 M1 통과, 18개월 표는 실패 → **`deploy_mode=info_only`, `tone_model=null`**: 확률·리포트·사다리는 정보로 제공하고 톤·비중은 주장하지 않는다(§12) |
-| **3** | 국면 모델 · 앙상블 · 비중 제안. **킬 규칙**: 라이브 장부에 ≥5% 낙폭 에피소드 8회 이상 또는 3년 경과 후(늦은 쪽) 블록 부트스트랩 95% 구간으로 평가, `y_dd5_20` Brier skill 이 0 을 넘지 못하면 대시보드를 "정보 제공 전용"으로 전환(톤·비중 제안 숨김) | 예정 |
+| **3** | 국면 모델 · 앙상블 · 비중 제안. **킬 규칙**: 라이브 장부에 ≥5% 낙폭 에피소드 8회 이상 또는 3년 경과 후(늦은 쪽) 블록 부트스트랩 95% 구간으로 평가, `y_dd5_20` Brier skill 이 0 을 넘지 못하면 대시보드를 "정보 제공 전용"으로 전환(톤·비중 제안 숨김) | 구현 완료(정보 전용) — 배포 확률에 **적합 파라미터 0개** 추가(HMM θ·Platt 은 그림자로 공개만 하고 확률에 결합하지 않는다). p2 가 `info_only` 이므로 `ARCHITECTURE_PHASE3.md` §15 단계 0 이 적용된다: 가중치·상태 카드는 렌더하지 않고 변동성 전용 비중 규칙 · 국면 게이지 · 시나리오 · 구간만 회색 정보로 표시한다. 킬 규칙 감시는 `mrl/track.py` → `docs/track_record.html` |
 
 검토했으나 채택하지 않은 방향(`VALIDATION.md` §9): 계절성, 뉴스 LLM 감성, 딥러닝 가격 예측, 거시 나우캐스팅.
 
@@ -228,16 +263,23 @@ Python 3.12, `requirements.txt` 고정 설치, 커밋 전 `git pull --rebase -X 
   잠그지 않고, 두 번째 후보(또는 다음 수동 실행)가 마감 봉이 생긴 뒤 그날을 기록한다. (전에는 어떤 실행이든 같은 제목을
   써서, 예컨대 14:00 ET 수동 실행 한 번이 그날을 장부에서 영구히 비웠다.)
 * 휴장일(평일)에도 실행되지만 `daily.py` 가 전일 기준으로 처리하고, 장부는 같은 `asof` 를 두 번 쓰지 않는다.
-* 커밋 대상: `data/ docs/ results/`. 변경이 없으면 커밋하지 않는다. 잡 타임아웃 30분.
+* 커밋 대상: `docs/ results/`. **`data/` 는 커밋하지 않는다** — 캐시는 `meta.spy_last` 가드로 묶인 하나의 정합
+  단위라 부분 커밋한 트리는 `load_cache()` 가 거부하고, 가격을 전량 재다운로드하면 하드컷 지문이 매일 바뀌어
+  주간에만 갱신되는 `summary_p2.json` 과 어긋난다. `data/` 는 `build_cache.py` 를 함께 도는 주간 실행에서
+  통째로 커밋한다. 변경이 없으면 커밋하지 않는다. 잡 타임아웃 30분.
 
 ### `weekly.yml` — 일요일 보정 작업
 
 * cron `0 13 * * 0`(일요일 09:00 EDT / 08:00 EST) + 수동 실행(변형 선택 가능, 기본 `both`).
 * `scripts/build_cache.py` → `scripts/run_backtest_v0.py --variant both` → `weekly: YYYY-MM-DD` 커밋. 타임아웃 60분.
 * Phase 2 단계가 그 뒤에 붙는다: `scripts/run_calibration.py --acceptance-rule amended --acceptance-blocks both`(하드컷 walk-forward + 라이브 계수 결정론 검사; `amended` 는 장부 #2a 경로 (b), `both` 는 장부 #2d — 24개월·18개월 두 사전 등록 표 **모두**에서 통과해야 배치. 둘 다 사후 규칙이라 장부에 기재돼 있다) →
-  `scripts/run_backtest_v1.py --all-configs` → `summary_p2.json.determinism.ok` 확인 → 커밋. 어느 단계든 실패하면 커밋하지 않는다(§12).
+  `scripts/run_backtest_v1.py --all-configs` → `scripts/run_phase3.py --all-sensitivities`(HMM walk-forward → 그림자 멤버·채택 검정 → 비중 백테스트·사다리 → 시나리오 → 킬룰 재현; 로컬 ~20초, 사양 < 4분) →
+  **결정론 게이트**: `summary_p2.json.determinism.ok` **와** `summary_p3.json.determinism.ok` 가 모두 true 이고, `summary_p3.json.selftest` 의 다섯 키(`hmm_param_count_ok` · `p2_param_count_ok` · `sizing_n_params_ok` · `production_shadow_only` · `pit_bit_identical`)가 하나도 false 가 아니어야 통과한다(아니면 exit 1 → 커밋 없음). `summary_p3.json` 이 아예 없어도 exit 1. `determinism.status=="data_changed"` · `run.spec_changed` · `summary_p3.json.flags` 는 `::warning::` 으로만 남고 커밋을 막지 않는다 → 커밋. 어느 단계든 실패하면 커밋하지 않는다(§12).
 
 ### GitHub Pages
+
+주간 잡이 `index.html` · `backtest_v0.html` · `backtest_v1.html` · `calibration_p2.html` 과 함께
+`sizing_p3.html` · `regime_p3.html` · `track_record.html`(합계 약 1.0MB)을 커밋한다.
 
 저장소 Settings → Pages → Source: *Deploy from a branch* → `main` / `/docs`. `docs/.nojekyll` 은 Jekyll 빌드를 건너뛰고
 파일을 그대로 서빙하게 하는 표식이다(빌드 지연·밑줄 파일 무시 문제 방지).
@@ -254,6 +296,8 @@ Python 3.12, `requirements.txt` 고정 설치, 커밋 전 `git pull --rebase -X 
 | `tests/test_replay_smoke.py` | 60거래일 구간 replay 가 예외 없이 돌고 열 계약을 만족 |
 | `tests/test_features.py` · `test_vol.py` · `test_model.py` · `test_calibrate.py` · `test_decision.py` · `test_events.py` | Phase 2 모듈 계약: 점 원칙(무작위 T 20개 비트 동일), VIX 내재 확률 식, 퍼지·기후학·블록 타일링, walk-forward 결정론·누수 카나리, 4-파라미터 예산, 결정층 히스테리시스·dwell·churn, 이벤트 표 |
 | `tests/test_ledger_p2.py` · `test_report_p2.py` | 장부 P2 열 왕복·라이브 Brier, p2 카드·보정/결정층 리포트 렌더(BAD_TOKEN 없음) |
+| `tests/test_regime.py` · `test_ensemble.py` · `test_sizing.py` · `test_scenarios.py` · `test_track.py` | Phase 3 모듈 계약: HMM θ 동결·guard·필터 전용(smoothed 금지), 등록부 sha·1일차 상태·채택 검정(신선 자료만 채택 가능)·장부 번호가 §8 에 실재하는지, 비중 규칙 적합 파라미터 0·밴드 경계·재개 안전, 시나리오 n·n_eff·Wilson·풀링, 지평 규칙(판정일 전 판정어 없음)·2단계 킬 sticky·D1~D11 경보 |
+| `tests/test_ledger_p3.py` · `test_report_p3.py` · `test_evaluate_p3.py` · `test_scripts_p3.py` | 장부 P3 열 왕복, P3 카드·비중/국면/트랙 리포트 렌더(BAD_TOKEN 없음, info_only 게이팅), P3 평가 보조, `run_phase3.py`·`daily.py` 의 P3 경로 |
 | `tests/test_scripts_integration.py` (Phase 2 부분) | `run_calibration.py --end 2006-12-29` 산출물·엄격 JSON·하드컷(마지막 20 라벨 NaN)·결정론 게이트(같은 입력 두 번 = 같은 CSV, 계수를 틀어 심으면 exit 1)·홀드아웃 거부(exit 1)·unlock 존재 시 exit 2, `run_backtest_v1.py` 완주·spec 불일치 exit 1, `daily.py` P2 장부 열·카드·모델 없음/spec 불일치 exit 1 |
 
 `test_parity.py` 통과가 "v0 동결 성공"의 정의다(`VALIDATION.md` §4).
@@ -264,6 +308,7 @@ Python 3.12, `requirements.txt` 고정 설치, 커밋 전 `git pull --rebase -X 
 
 * `ARCHITECTURE.md` — 모듈 계약(함수 시그니처·열 이름·원칙). 다른 모듈이 의존하므로 계약을 바꾸면 여기부터 고친다.
 * `ARCHITECTURE_PHASE2.md` — Phase 2 계약(보정 모델 p2 · 결정층 v1 · 스크립트 · 워크플로 · 테스트). 아래 §12 의 근거.
+* `ARCHITECTURE_PHASE3.md` — Phase 3 계약(정규): 국면·등록부·비중·시나리오·트랙레코드·킬 규칙. §15 가 단계별 표시 규칙, §17 이 VALIDATION 반영 문구다.
 * `VALIDATION.md` — 사전 등록 문서. 목표변수·평가·수용/킬 규칙·실험 장부. **결과를 본 뒤에는 항목을 지우지 않고 취소선으로 남긴다.**
 
 ---

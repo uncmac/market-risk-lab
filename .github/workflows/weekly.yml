@@ -86,22 +86,52 @@ jobs:
       - name: scripts/run_backtest_v1.py (결정층 → 톤 → v0 와 같은 성적표 → results/ + docs/backtest_v1.html)
         run: python scripts/run_backtest_v1.py --all-configs
 
-      - name: 결정론 게이트 확인 (summary_p2.json.determinism.ok 가 true 가 아니면 커밋하지 않는다)
+      - name: scripts/run_phase3.py (HMM walk-forward → 그림자 멤버·채택 검정 → 비중 백테스트·사다리 → 시나리오 → 킬룰 재현 → results/ + docs/{sizing_p3,regime_p3,track_record}.html; 결정론 검사)
+        # ARCHITECTURE_PHASE3.md §12. --holdout-final 은 여기에 **넣지 않는다**(로컬 1회, #2b 와 같은 세션, 커밋 메시지 `holdout-final: 2b`).
+        # 하드컷은 기본값(HOLDOUT_START 직전 세션). 결정론 검사 실패면 exit 1 → 아래 게이트·커밋에 이르지 못한다.
+        # 예산: 로컬 실측 ~20초(HMM 22회 재적합 · 채택 검정 · 킬룰 재현 223창 · 차트 포함) — 사양의 < 4분 안.
+        run: python scripts/run_phase3.py --all-sensitivities
+
+      - name: 결정론 게이트 확인 (summary_p2/p3.json 의 determinism.ok 가 true 가 아니면 커밋하지 않는다)
         shell: bash
         run: |
           set -euo pipefail
           python - <<'EOF'
-          import json, sys
+          import json, os, sys
           s = json.load(open("results/summary_p2.json", encoding="utf-8"))
           d = s.get("determinism") or {}
-          print("determinism:", d.get("status"), "|", d.get("note"))
+          print("determinism(p2):", d.get("status"), "|", d.get("note"))
           if d.get("ok") is not True:
-              print("::error::결정론 검사 실패 — 커밋하지 않는다")
+              print("::error::결정론 검사 실패(Phase 2) — 커밋하지 않는다")
               sys.exit(1)
           if d.get("material_drift"):
               print(f"::warning::입력 데이터 변경으로 계수가 {d.get('max_abs_diff'):.2e} 이동(허용 재조정 수준 1e-4 초과) — VALIDATION.md §8 장부 검토 대상")
           if s.get("run", {}).get("spec_changed"):
               print("::warning::spec_sha256 변경(코드 변경) — 장부(VALIDATION.md §8)에 기재하라")
+
+          # Phase 3 (ARCHITECTURE_PHASE3.md §11): θ·Platt 1e-7 · backtest_p3.csv 해시 · 유지 조건 · 자기검사
+          p3_path = "results/summary_p3.json"
+          if not os.path.exists(p3_path):
+              print("::error::results/summary_p3.json 이 없다 — run_phase3.py 가 산출물을 쓰지 못했다")
+              sys.exit(1)
+          p3 = json.load(open(p3_path, encoding="utf-8"))
+          d3 = p3.get("determinism") or {}
+          print("determinism(p3):", d3.get("status"), "|", d3.get("note"))
+          if d3.get("ok") is not True:
+              print("::error::결정론 검사 실패(Phase 3) — 커밋하지 않는다")
+              sys.exit(1)
+          if d3.get("status") == "data_changed":
+              print(f"::warning::입력 지문 변경으로 θ 가 {d3.get('theta_max_abs_diff')} 이동 — 결정론 검사가 아니다(VALIDATION.md §8 검토 대상)")
+          if p3.get("run", {}).get("spec_changed"):
+              print("::warning::registry_sha/sizing_sha 변경(코드 변경) — 장부(VALIDATION.md §8)에 기재하라")
+          st = p3.get("selftest") or {}
+          bad = [k for k in ("hmm_param_count_ok", "p2_param_count_ok", "sizing_n_params_ok",
+                             "production_shadow_only", "pit_bit_identical") if st.get(k) is False]
+          if bad:
+              print(f"::error::Phase 3 자기검사 실패 {bad} — 커밋하지 않는다")
+              sys.exit(1)
+          for f in (p3.get("flags") or []):
+              print(f"::warning::Phase 3 플래그 — {f}")
           EOF
 
       - name: data/ docs/ results/ 커밋 및 푸시

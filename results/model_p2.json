@@ -7,11 +7,11 @@
     "x_ma"
   ],
   "coef": {
-    "x_vix": 0.6914557412478084,
-    "x_har": 0.5739566907113417,
-    "x_ma": -2.3439857028336606
+    "x_vix": 0.6914557476718626,
+    "x_har": 0.5739618722872306,
+    "x_ma": -2.3439797217730614
   },
-  "intercept": -0.9135099947419851,
+  "intercept": -0.9135087082303903,
   "clim": 0.17139540882125354,
   "refit_date": "2024-08-30",
   "train_start": "1993-10-14",
@@ -30,8 +30,8 @@
     "n_iter": 20,
     "purge": 20,
     "train_start_rule": "1993-10-14",
-    "data_sha256": "9b125057424cbad90d2e5f363c0201b0d2b22bac062debba92413e1eb4947e8a",
-    "hard_cut_data_sha256": "9b125057424cbad90d2e5f363c0201b0d2b22bac062debba92413e1eb4947e8a",
+    "data_sha256": "6acfb88a95f30901548e4ec1bdef82bc4ebcba1d0ab8b1905c0a36a49e174a37",
+    "hard_cut_data_sha256": "6acfb88a95f30901548e4ec1bdef82bc4ebcba1d0ab8b1905c0a36a49e174a37",
     "end": "2024-08-30",
     "live_mode": "pre_holdout_hard_cut",
     "acceptance_rule": "amended",
@@ -40,9 +40,9 @@
       "24",
       "18"
     ],
-    "git_sha": "063462ff65feb1fc7f26f42151474212ba1d6705",
+    "git_sha": "d4c3f2622c30e66b705e67592bf44fca27970b5b",
     "first_refit": "2003-01-02",
     "determinism_status": "data_changed"
   },
-  "created_at_utc": "2026-09-08T14:35:29Z"
+  "created_at_utc": "2026-09-08T18:12:01Z"
 }
