@@ -339,7 +339,7 @@ def charts_p2(oos, blocks, summary_p2, spy_close) -> dict[str, bytes]     # 신�
 
 ## 12. 장부 — `mrl/ledger.py` (확장; 기존 열 순서 불변, `schema_version=2`)
 
-`P2_COLUMNS` 를 `LEDGER_COLUMNS` 뒤에 추가(구 행은 NaN): `prob_dd5_20`(기존 예약 열, = p_m3), `p2_p_m1`, `p2_p_m2`, `p2_p_vix`, `p2_p_vix_bgk`, `p2_clim`, `p2_lo`, `p2_hi`, `p2_band_src`(param|calib), `p2_x_vix`, `p2_x_har`, `p2_x_ma`, `p2_har_vol_20`, `p2_har_fc_20`, `p2_r`, `p2_state`, `p2_days_in_state`, `p2_tone_model`, `p2_deploy_mode`, `p2_d_vix`, `p2_d_har`, `p2_d_ma`, `p2_d_refit`(pp), `p2_input_missing`(str|''), `p2_model_id`.
+`P2_COLUMNS` 를 `LEDGER_COLUMNS` 뒤에 추가(구 행은 NaN): `prob_dd5_20`(기존 예약 열, = **배포 단**의 확률; `info_only` 면 M3 를 정보로 — 2026-09-08 정정), `p2_p_m1`, `p2_p_m2`, `p2_p_vix`, `p2_p_vix_bgk`, `p2_clim`, `p2_lo`, `p2_hi`, `p2_band_src`(param|calib), `p2_x_vix`, `p2_x_har`, `p2_x_ma`, `p2_har_vol_20`, `p2_har_fc_20`, `p2_r`, `p2_state`, `p2_days_in_state`, `p2_tone_model`, `p2_deploy_mode`, `p2_d_vix`, `p2_d_har`, `p2_d_ma`, `p2_d_refit`(pp), `p2_input_missing`(str|''), `p2_model_id`, `p2_p_m3`, `p2_prob_model_id`(맨 뒤 두 열은 2026-09-08 에 덧붙임 — 앞 열 순서 불변, 24 → 26).
 `append_today` 는 이 열을 받아 정규화(숫자 NaN 허용, 문자열은 object). `backfill` 은 그대로(`y_dd5_20` 이 채워지면 라이브 Brier 가 자동 누적). `summary()` 추가 키: `p2: {n_scored, brier, brier_clim, brier_m1, brier_vix, bss_clim, bss_m1, bss_vix, ci_bss_clim(블록 40 부트스트랩), episodes5_observed, months_elapsed, kill_rule_due}`.
 
 ## 13. 스크립트

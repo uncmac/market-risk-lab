@@ -5,16 +5,21 @@
   2027 은 잠정(직전 회의에서 확정) → ``tentative=True``. 매년 12월 손으로 갱신하고, 표 잔여가 60일 미만이면 selftest 가 경고.
 * OPEX: 셋째 금요일 → calendar_us.is_trading_day 가 아니면 직전 거래일 (성금요일·준틴스 관측일 등).
 * 쿼드위칭: 3·6·9·12월 OPEX.
-* NFP(고용보고서, 08:30 ET): 기본 규칙 = 그 달 첫 금요일. 예외 (1) 1월: 첫 금요일이 1/1~1/3 이면 다음 금요일
+* NFP(고용보고서, 08:30 ET): 기본 규칙(계약 §10) = 그 달 첫 금요일. 예외 (1) 1월: 첫 금요일이 1/1~1/3 이면 다음 금요일
   (BLS 관행: 2015-01-09, 2016-01-08, 2020-01-10, 2021-01-08, 2025-01-10, 2026-01-09). (2) 연방 휴일이면 직전 목요일
   (2025-07-03, 2026-07-02). (3) ``NFP_OVERRIDES["YYYY-MM"]`` 가 있으면 그 날짜(BLS 공표 예외·셧다운 지연 등).
-  주의: BLS 의 실제 규칙은 "12일이 든 참조 주 뒤 셋째 금요일"이라 첫 금요일이 1~2일이면 한 주 늦는 달이 있다
-  (예: 2021-10-08, 2023-12-08, 2027-10-08 예상). 그런 달은 표를 보고 NFP_OVERRIDES 에 넣는다 — 규칙을 조용히 바꾸지 않는다.
-  BLS 는 성금요일에도 발표한다(연방 휴일이 아님): 발표일이 휴장일이면 다음 세션에 반영되는 것으로 sessions_ahead 를 센다.
+  BLS 의 실제 편성 규칙은 "12일이 든 참조 주(일~토) 다음의 셋째 금요일" 이라, 참조 달의 12일이 일요일이고 그 달이
+  30일이면(또는 2월) 첫 금요일보다 한 주 늦다 (실측: 2020-05-08, 2021-10-08, 2023-12-08, 2024-03-08; 표 범위: 2026-05-08,
+  2027-10-08). 그런 달은 ``NFP_OVERRIDES`` 에 넣고, ``nfp_bls_rule_dates`` / ``nfp_rule_discrepancies`` 가 두 규칙의
+  불일치를 드러낸다 — 규칙을 조용히 바꾸지 않는다. BLS 발표 일정과 대조한 해는 ``NFP_CONFIRMED_YEARS``, 그 밖의 해는
+  ``upcoming`` 에서 ``tentative=True``. BLS 는 성금요일에도 발표한다(연방 휴일이 아님): 발표일이 휴장일이면 다음 세션에
+  반영되는 것으로 sessions_ahead 를 센다. 2025-10~12 는 연방정부 셧다운으로 실제 발표가 지연·병합(9월분 11/20, 10월분
+  별도 발표 없음, 11월분 12/16)됐으나 이 모듈은 앞으로의 일정만 표시하므로 지난 달의 실제값은 되채우지 않는다.
 * CPI: 선택 표(``CPI_RELEASE_DAYS``). 비어 있으면 카드에 "CPI 일정 미등록".
 
 계약
     opex_dates(year) / quad_witching(year) / nfp_dates(year) / fomc_dates(year) / cpi_dates(year) -> list[date]
+    nfp_bls_rule_dates(year) -> list[date] ; nfp_rule_discrepancies(year) -> list[dict]   # 자기점검(첫 금요일+override vs BLS 규칙)
     upcoming(asof, n_sessions=20) -> DataFrame[date, kind, sessions_ahead, label_ko, tentative]   # asof 이후 거래일만
     table_horizon(asof) -> {last_fomc, days_left, warn: days_left < 60}
 """
@@ -22,6 +27,7 @@ from __future__ import annotations
 
 import warnings
 from datetime import date, datetime, timedelta
+from numbers import Integral
 
 import pandas as pd
 
@@ -29,9 +35,10 @@ from mrl import calendar_us as cal
 
 __all__ = [
     "FOMC_DECISION_DAYS", "FOMC_TENTATIVE_YEARS", "OPEX_EXPECTED", "CPI_RELEASE_DAYS", "NFP_OVERRIDES",
+    "NFP_OVERRIDE_NOTES", "NFP_CONFIRMED_YEARS",
     "KINDS", "LABEL_KO", "UPCOMING_COLUMNS", "QUAD_MONTHS", "DEFAULT_HORIZON_SESSIONS", "TABLE_WARN_DAYS",
-    "opex_dates", "quad_witching", "nfp_dates", "fomc_dates", "cpi_dates", "upcoming", "table_horizon",
-    "fomc_table_years", "is_federal_holiday",
+    "opex_dates", "quad_witching", "nfp_dates", "nfp_bls_rule_dates", "nfp_rule_discrepancies",
+    "fomc_dates", "cpi_dates", "upcoming", "table_horizon", "fomc_table_years", "is_federal_holiday",
 ]
 
 # 2일 회의의 둘째 날(성명 14:00 ET). 출처: federalreserve.gov 회의 달력·보도자료(2024-08-09, 2025-09-05). 매년 12월 손으로 갱신
@@ -50,7 +57,17 @@ OPEX_EXPECTED: dict[int, list[str]] = {
 }   # 2025-04-17(성금요일 4/18), 2026-06-18(준틴스 6/19), 2027-06-17(준틴스 6/19 토→금 6/18 관측 휴장)
 
 CPI_RELEASE_DAYS: dict[int, list[str]] = {}       # 선택: BLS 표를 넣으면 표시, 비어 있으면 카드에 "CPI 일정 미등록"
-NFP_OVERRIDES: dict[str, str] = {}                # "YYYY-MM" → 날짜 (BLS 예외; 기본 규칙: 그 달 첫 금요일, 연방 휴일이면 직전 목요일)
+# "YYYY-MM" → 날짜 (BLS 예외; 기본 규칙: 그 달 첫 금요일, 연방 휴일이면 직전 목요일).
+# 참조 달의 12일이 일요일이고 그 달이 30일이면 BLS 규칙(참조주 뒤 셋째 금요일)은 첫 금요일보다 한 주 늦다 — 그 달을 여기에 둔다.
+NFP_OVERRIDES: dict[str, str] = {
+    "2026-05": "2026-05-08",   # 4월 12일(일)·30일 달 → BLS 2026 발표 일정 5/8 (2020-05-08 과 같은 구조)
+    "2027-10": "2027-10-08",   # 9월 12일(일)·30일 달 → BLS 규칙 산출 10/8 (2027 일정 미공표 → 잠정)
+}
+NFP_OVERRIDE_NOTES: dict[str, str] = {
+    "2026-05": "BLS 2026 Employment Situation 일정(참조주 규칙; 첫 금요일 5/1 아님)",
+    "2027-10": "BLS 참조주 규칙 산출 — 2027 일정 공표 전 잠정",
+}
+NFP_CONFIRMED_YEARS: frozenset[int] = frozenset({2025, 2026})   # 규칙+override 를 BLS 공표 일정과 대조한 해. 그 밖은 tentative
 
 QUAD_MONTHS = (3, 6, 9, 12)
 DEFAULT_HORIZON_SESSIONS = 20                     # 라벨 지평과 동일
@@ -88,8 +105,9 @@ def _to_date(d) -> date:
 
 
 def _check_year(year) -> int:
-    if isinstance(year, bool) or not isinstance(year, int):
+    if isinstance(year, bool) or not isinstance(year, Integral):
         raise TypeError(f"연도는 int 여야 함: {year!r}")
+    year = int(year)
     if not (1900 <= year <= 2200):
         raise ValueError(f"연도 범위 밖: {year}")
     return year
@@ -166,13 +184,40 @@ def nfp_dates(year: int) -> list[date]:
             # 셧다운 지연처럼 다음 달로 넘어간 날짜도 허용 (해당 월 항목으로 둔다)
             out.append(_to_date(NFP_OVERRIDES[key]))
             continue
-        d = _nth_weekday(year, m, 4, 1)
-        if m == 1 and d.day <= 3:
-            d += timedelta(days=7)
-        while is_federal_holiday(d) or d.weekday() >= 5:
-            d -= timedelta(days=1)
-        out.append(d)
+        out.append(_nfp_adjust(_nth_weekday(year, m, 4, 1), m))
     return out
+
+
+def _nfp_adjust(d: date, month: int) -> date:
+    """NFP 공통 예외: 1월은 1/1~1/3 이면 다음 금요일(BLS 관행), 연방 휴일·주말이면 직전 평일(보통 목요일)."""
+    if month == 1 and d.day <= 3:
+        d += timedelta(days=7)
+    while is_federal_holiday(d) or d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def nfp_bls_rule_dates(year: int) -> list[date]:
+    """자기점검용: BLS 편성 규칙 — 참조 달(전달)의 12일이 든 주(일~토)의 토요일 뒤 **셋째 금요일** + 1월·휴일 예외.
+    override 를 보지 않는다. ``nfp_dates`` 와의 차이는 ``nfp_rule_discrepancies`` 가 보고한다."""
+    year = _check_year(year)
+    out = []
+    for m in range(1, 13):
+        ry, rm = (year - 1, 12) if m == 1 else (year, m - 1)
+        d12 = date(ry, rm, 12)
+        saturday = d12 + timedelta(days=(5 - d12.weekday()) % 7)
+        out.append(_nfp_adjust(saturday + timedelta(days=6 + 14), m))
+    return out
+
+
+def nfp_rule_discrepancies(year: int) -> list[dict]:
+    """``nfp_dates``(첫 금요일 + 예외 + override) 와 ``nfp_bls_rule_dates`` 가 다른 달의 목록
+    [{month, first_friday_rule, bls_rule, override}]. 비어 있어야 정상 — selftest·테스트가 감시(조용히 넘기지 않는다)."""
+    year = _check_year(year)
+    a, b = nfp_dates(year), nfp_bls_rule_dates(year)
+    return [{"month": f"{year:04d}-{m:02d}", "first_friday_rule": x.isoformat(), "bls_rule": y.isoformat(),
+             "override": NFP_OVERRIDES.get(f"{year:04d}-{m:02d}")}
+            for m, (x, y) in enumerate(zip(a, b), 1) if x != y]
 
 
 def fomc_table_years() -> list[int]:
@@ -206,7 +251,7 @@ def _events_for_year(year: int) -> list[tuple[date, str, bool]]:
     ev += [(d, "FOMC", year in FOMC_TENTATIVE_YEARS) for d in fomc]
     for d in opex_dates(year):
         ev.append((d, "QUAD" if d.month in QUAD_MONTHS else "OPEX", False))
-    ev += [(d, "NFP", False) for d in nfp_dates(year)]
+    ev += [(d, "NFP", year not in NFP_CONFIRMED_YEARS) for d in nfp_dates(year)]
     ev += [(d, "CPI", False) for d in cpi_dates(year)]
     return ev
 
@@ -225,6 +270,7 @@ def upcoming(asof, n_sessions: int = DEFAULT_HORIZON_SESSIONS) -> pd.DataFrame:
     """asof **이후** n_sessions 거래일 안의 이벤트. 열: date, kind, sessions_ahead, label_ko, tentative.
 
     sessions_ahead = asof 다음 거래일이 1. 발표일이 휴장일(예: 성금요일 NFP)이면 다음 세션 기준으로 세고 라벨에 표시.
+    tentative: FOMC 잠정 연도(FOMC_TENTATIVE_YEARS) 또는 BLS 일정과 대조하지 않은 해의 NFP(NFP_CONFIRMED_YEARS 밖).
     asof 당일 이벤트는 포함하지 않는다(이미 지난 것). .attrs: asof, n_sessions, horizon_end, cpi_registered, fomc_years_missing, warnings.
     """
     if isinstance(n_sessions, bool) or not isinstance(n_sessions, int) or n_sessions < 1:

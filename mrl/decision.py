@@ -11,7 +11,8 @@
 * [exit_caution, enter_caution) 안에서 진동해도 caution 은 그대로(히스테리시스). 상태가 바뀌면 days_in_state = 1 부터.
 * 체류(dwell) 규약: 어제 기록된 days_in_state(어제까지 그 상태로 보낸 세션 수)가 dwell 이상이면 오늘 격하 가능.
   즉 k 에 진입(days=1)한 상태는 k+4(days=5)까지 반드시 유지되고 k+5 부터 격하 가능 — 최소 5세션 체류.
-* 최대 변경 횟수: 하드캡 없음(숨은 파라미터가 된다). 구조적 상한 = 어떤 5세션 창에서도 ≤ 3회(격하 1 + 격상 2).
+* 최대 변경 횟수: 하드캡 없음(숨은 파라미터가 된다). 구조적 상한 = 어떤 5세션 창에서도 ≤ 3회(격하 1 + 격상 2) —
+  dwell=5 에서의 값이며, 임의 구성의 상한은 ``structural_max_changes`` 가 상태기계를 전수 열거해 구한다(dwell 2 → 4, dwell ≤ 1 → 5).
   KPI 상한 12회/년(사전 등록), churn 경보 = 직전 252세션 변경 > 12 (자동 재조정 없음, 장부 §8 검토 대상).
 * 입력 결측(r=None/NaN): 상태 유지, days_in_state 계속 증가, r=NaN 기록, 사유 "확률 계산 불가". 조용히 채우지 않는다.
 * 재적합일: 상태 이월(재적합 자체로 격하 불가; dwell 은 그대로 센다) — 이 모듈은 재적합을 모르므로 자동으로 만족.
@@ -30,7 +31,8 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import asdict, dataclass, replace
-from typing import Any
+from functools import lru_cache
+from itertools import product
 
 import numpy as np
 import pandas as pd
@@ -42,13 +44,15 @@ from mrl.config import (DECISION_P2, DECISION_P2_SENSITIVITY, P2_STATES, STATE_T
 __all__ = [
     "DecisionConfig", "RUN_COLUMNS", "CHURN_WINDOW", "STRUCTURAL_MAX_CHANGES_5", "KPI_MAX_SWITCHES_PER_YEAR",
     "SENSITIVITY_NAMES", "WARN_STATES", "STATE_KO", "REASON_MISSING", "V0_TRUE_ALARM_SHARE_REF",
-    "config_from_name", "sensitivity_configs", "step", "run", "to_tone", "next_thresholds", "kpis", "kpis_jsonable",
+    "config_from_name", "sensitivity_configs", "step", "run", "to_tone", "next_thresholds", "structural_max_changes",
+    "kpis", "kpis_jsonable",
 ]
 
 # run() 반환 열 (순서 고정 — 스크립트·리포트가 의존)
 RUN_COLUMNS = ("r", "state", "days_in_state", "changed", "reason_ko", "churn_252", "churn_alert")
 CHURN_WINDOW = 252                       # churn 경보 창(세션)
-STRUCTURAL_MAX_CHANGES_5 = 3             # dwell ≥ 1 이면 어떤 5세션 창에서도 변경 ≤ 3 (격하 1 + 격상 2)
+STRUCTURAL_WINDOW = 5                    # 구조적 상한을 재는 창(세션)
+STRUCTURAL_MAX_CHANGES_5 = 3             # 사전 등록 구성(dwell 5)에서 어떤 5세션 창에서도 변경 ≤ 3 (격하 1 + 격상 2); 테스트가 전수 열거와 대조
 KPI_MAX_SWITCHES_PER_YEAR = DECISION_P2["kpi_max_switches_per_year"]
 SENSITIVITY_NAMES = ("default",) + tuple(DECISION_P2_SENSITIVITY)      # default, wide, symmetric_dwell, no_dwell
 WARN_STATES = ("caution", "reduce")      # 경고 상태 (evaluate.WARN_TONES 와 같은 뜻)
@@ -209,6 +213,36 @@ def next_thresholds(state: str, days_in_state: int, clim: float, cfg: DecisionCo
     }
 
 
+@lru_cache(maxsize=64)
+def structural_max_changes(cfg: DecisionConfig = DecisionConfig(), window: int = STRUCTURAL_WINDOW) -> int:
+    """어떤 ``window`` 세션 창에서도 넘을 수 없는 상태 변경 횟수 — 상태기계를 **전수 열거**해 구한다(주장이 아니라 계산).
+
+    step 은 r 을 네 임계와의 비교로만 보므로 r 은 다섯 구간의 대표값이면 충분하고, days 는 max(dwell, dwell_escalate) 를 넘으면
+    같은 행동이므로 초기 (state, days) 를 그 범위에서 전부 시도한다. 기본 구성은 3 (= STRUCTURAL_MAX_CHANGES_5).
+    """
+    if isinstance(window, bool) or not isinstance(window, (int, np.integer)) or window < 1:
+        raise ValueError(f"window 는 1 이상의 정수여야 함: {window!r}")
+    eps = 1e-6
+    levels = (0.0,
+              (cfg.exit_caution + cfg.enter_caution) / 2.0,          # 히스테리시스 밴드 안
+              (cfg.enter_caution + cfg.exit_reduce) / 2.0 if cfg.enter_caution < cfg.exit_reduce else cfg.enter_caution,
+              (cfg.exit_reduce + cfg.enter_reduce) / 2.0,            # reduce 유지 · normal→caution
+              cfg.enter_reduce + eps)                                # →reduce
+    levels = tuple(sorted(set(float(x) for x in levels)))
+    max_days = max(cfg.dwell, cfg.dwell_escalate)
+    best = 0
+    for st0 in P2_STATES:
+        for d0 in range(0, max_days + 1):
+            for path in product(levels, repeat=int(window)):
+                st, d, n = st0, d0, 0
+                for rv in path:
+                    new_st, d, _ = step(rv, st, d, cfg)
+                    n += new_st != st
+                    st = new_st
+                best = max(best, n)
+    return int(best)
+
+
 # ------------------------------------------------------------------
 # 시계열 실행
 # ------------------------------------------------------------------
@@ -328,7 +362,7 @@ def kpis(states_df: pd.DataFrame, y_dd: pd.Series, spy_close, v0_ref: dict | Non
       n_warn_runs, median_warn_run(경고 런 중앙 길이), median_run_by_state, warn_share,
       true_alarm_share(경고 런 시작일의 y_dd5_20 비율 = evaluate._true_alarm_share), true_alarm_share_baseline(=base_rate),
       true_alarm_edge, true_alarm_share_v0_ref(10.9~13.2%, VALIDATION §8 #1),
-      max_changes_any_5_sessions, structural_bound(3 | None), structural_bound_ok,
+      max_changes_any_5_sessions, structural_bound(구성의 전수 열거 상한; 기본 3), structural_bound_ok,
       churn_alert_sessions, churn_alert_any, max_churn_252, n_missing, missing_share,
       allocation(evaluate.allocation_sim 전체; 'series' 는 pandas — JSON 은 kpis_jsonable), warnings.
     """
@@ -367,10 +401,12 @@ def kpis(states_df: pd.DataFrame, y_dd: pd.Series, spy_close, v0_ref: dict | Non
     runs_all = E._runs(state)
     run_by_state = {s: _median_or_nan(b - a + 1 for a, b, v in runs_all if v == s) for s in _KPI_STATE_KEYS}
     true_alarm = E._true_alarm_share(is_warn, yv) if n else np.nan
-    max5 = int(changed.astype(int).rolling(5, min_periods=1).sum().max()) if n else 0
+    max5 = int(changed.astype(int).rolling(STRUCTURAL_WINDOW, min_periods=1).sum().max()) if n else 0
     cfg = dict(df.attrs.get("config", {}))
-    dwell = cfg.get("dwell", DECISION_P2["dwell"])
-    structural_bound = STRUCTURAL_MAX_CHANGES_5 if dwell >= 1 else None
+    cfg_obj = DecisionConfig(**cfg) if cfg else DecisionConfig()
+    if not cfg:
+        warn_list.append("states_df.attrs 에 config 가 없어 기본 구성(DECISION_P2)으로 구조적 상한을 계산")
+    structural_bound = structural_max_changes(cfg_obj)
     if "churn_252" in df.columns:
         churn = df["churn_252"].astype(int)
     else:
@@ -412,8 +448,9 @@ def kpis(states_df: pd.DataFrame, y_dd: pd.Series, spy_close, v0_ref: dict | Non
         "true_alarm_edge": (true_alarm - base_rate) if not (math.isnan(true_alarm) or math.isnan(base_rate)) else np.nan,
         "true_alarm_share_v0_ref": ref,
         "max_changes_any_5_sessions": max5,
+        "structural_window": STRUCTURAL_WINDOW,
         "structural_bound": structural_bound,
-        "structural_bound_ok": (bool(max5 <= structural_bound) if structural_bound is not None else None),
+        "structural_bound_ok": bool(max5 <= structural_bound),
         "churn_window": CHURN_WINDOW,
         "churn_alert_threshold": int(churn_thr),
         "churn_alert_sessions": int(churn_alert.sum()),

@@ -85,6 +85,10 @@ def test_fomc_missing_year_warns_and_returns_empty():
         assert EV.fomc_dates(2031) == []
     with pytest.raises(TypeError):
         EV.fomc_dates("2026")
+    with pytest.raises(TypeError):
+        EV.fomc_dates(True)
+    import numpy as np
+    assert EV.fomc_dates(np.int64(2026)) == EV.fomc_dates(2026)     # numpy 정수 허용
 
 
 # ------------------------------------------------------------------
@@ -94,12 +98,13 @@ NFP_EXPECTED = {
     # 1월: 첫 금요일 1/3 → 1/10 ; 7/4(금) 연방 휴일 → 7/3(목)
     2025: ["2025-01-10", "2025-02-07", "2025-03-07", "2025-04-04", "2025-05-02", "2025-06-06",
            "2025-07-03", "2025-08-01", "2025-09-05", "2025-10-03", "2025-11-07", "2025-12-05"],
-    # 1월: 첫 금요일 1/2 → 1/9 ; 7/3(금) 은 7/4(토) 의 관측 휴일 → 7/2(목) ; 4/3 은 성금요일이지만 연방 휴일 아님 → 발표
-    2026: ["2026-01-09", "2026-02-06", "2026-03-06", "2026-04-03", "2026-05-01", "2026-06-05",
+    # 1월: 첫 금요일 1/2 → 1/9 ; 7/3(금) 은 7/4(토) 의 관측 휴일 → 7/2(목) ; 4/3 은 성금요일이지만 연방 휴일 아님 → 발표 ;
+    # 5월: 4/12 가 일요일·30일 달 → BLS 참조주 규칙 5/8 (첫 금요일 5/1 아님; NFP_OVERRIDES) — BLS 2026 일정과 동일
+    2026: ["2026-01-09", "2026-02-06", "2026-03-06", "2026-04-03", "2026-05-08", "2026-06-05",
            "2026-07-02", "2026-08-07", "2026-09-04", "2026-10-02", "2026-11-06", "2026-12-04"],
-    # 1월: 첫 금요일 1/1(휴일) → 1/8
+    # 1월: 첫 금요일 1/1(휴일) → 1/8 ; 10월: 9/12 일요일·30일 달 → 10/8 (override, 잠정)
     2027: ["2027-01-08", "2027-02-05", "2027-03-05", "2027-04-02", "2027-05-07", "2027-06-04",
-           "2027-07-02", "2027-08-06", "2027-09-03", "2027-10-01", "2027-11-05", "2027-12-03"],
+           "2027-07-02", "2027-08-06", "2027-09-03", "2027-10-08", "2027-11-05", "2027-12-03"],
 }
 
 
@@ -115,6 +120,34 @@ def test_nfp_rule_first_friday_with_january_and_holiday_exceptions():
     assert EV.nfp_dates(2019)[0] == D(2019, 1, 4)
     assert EV.nfp_dates(2020)[0] == D(2020, 1, 10)
     assert EV.nfp_dates(2021)[0] == D(2021, 1, 8)
+    assert EV.nfp_dates(2030)[0] == D(2030, 1, 4)
+
+
+def test_nfp_first_friday_plus_overrides_equals_bls_reference_week_rule():
+    """자기점검: 표 범위(2025~2027)에서 첫 금요일+예외+override == BLS 참조주 규칙(12일이 든 주 뒤 셋째 금요일). 불일치 목록은 비어야 한다."""
+    for y in YEARS:
+        assert EV.nfp_dates(y) == EV.nfp_bls_rule_dates(y), y
+        assert EV.nfp_rule_discrepancies(y) == [], y
+    # BLS 규칙의 알려진 실측 (첫 금요일 규칙이 틀리는 달): 2020-05-08, 2021-10-08, 2023-12-08, 2024-03-08, 2019-03-08
+    assert EV.nfp_bls_rule_dates(2020)[4] == D(2020, 5, 8)
+    assert EV.nfp_bls_rule_dates(2021)[9] == D(2021, 10, 8)
+    assert EV.nfp_bls_rule_dates(2023)[11] == D(2023, 12, 8)
+    assert EV.nfp_bls_rule_dates(2024)[2] == D(2024, 3, 8)
+    assert EV.nfp_bls_rule_dates(2019)[2] == D(2019, 3, 8)
+    # 1월·휴일 예외는 BLS 규칙 쪽에도 같이 적용된다
+    assert EV.nfp_bls_rule_dates(2026)[0] == D(2026, 1, 9) and EV.nfp_bls_rule_dates(2026)[6] == D(2026, 7, 2)
+    # override 가 실제로 일을 한다: 2026-05 override 를 빼면 첫 금요일 5/1 로 돌아가고 불일치가 보고된다
+    saved = dict(EV.NFP_OVERRIDES)
+    try:
+        del EV.NFP_OVERRIDES["2026-05"]
+        assert EV.nfp_dates(2026)[4] == D(2026, 5, 1)
+        disc = EV.nfp_rule_discrepancies(2026)
+        assert disc == [{"month": "2026-05", "first_friday_rule": "2026-05-01", "bls_rule": "2026-05-08", "override": None}]
+    finally:
+        EV.NFP_OVERRIDES.clear()
+        EV.NFP_OVERRIDES.update(saved)
+    assert set(EV.NFP_OVERRIDE_NOTES) == set(EV.NFP_OVERRIDES)
+    assert EV.NFP_CONFIRMED_YEARS == frozenset({2025, 2026})
 
 
 def test_nfp_override(monkeypatch):
@@ -183,6 +216,13 @@ def test_upcoming_tentative_flag_and_cpi_table(monkeypatch):
     fomc = up[up["kind"] == "FOMC"]
     assert len(fomc) == 1 and fomc.iloc[0]["date"] == pd.Timestamp("2027-09-15")
     assert bool(fomc.iloc[0]["tentative"]) is True and "잠정" in fomc.iloc[0]["label_ko"]
+    # 2027 NFP 는 BLS 일정 미대조 → 잠정 ; 2026 NFP 는 확정
+    nfp27 = up[up["kind"] == "NFP"]
+    assert len(nfp27) == 1 and nfp27.iloc[0]["date"] == pd.Timestamp("2027-09-03") and bool(nfp27.iloc[0]["tentative"]) is True
+    assert "잠정" in nfp27.iloc[0]["label_ko"]
+    up26 = EV.upcoming(D(2026, 4, 20), 20)
+    nfp26 = up26[up26["kind"] == "NFP"]
+    assert list(nfp26["date"].dt.date) == [D(2026, 5, 8)] and not bool(nfp26.iloc[0]["tentative"])
     # CPI 표를 등록하면 표시된다
     monkeypatch.setitem(EV.CPI_RELEASE_DAYS, 2026, ["2026-09-11", "2026-10-14"])
     assert EV.cpi_dates(2026) == [D(2026, 9, 11), D(2026, 10, 14)]

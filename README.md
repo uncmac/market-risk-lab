@@ -153,7 +153,7 @@ python scripts/selftest.py     # 캐시 자기점검: 빈 열 · 유령 행 · �
 
 열: `asof, recorded_at_utc, variant, states(8개 신호), score_d/w/m, overall_d/w/m, tone, spy_close, vix_close, prob_dd5_20, run_id`
 + 20/60일이 지난 뒤 채워지는 `y_sign_20/60, y_dd5_20, fwd_ret_20/60`. 같은 `asof` 는 한 번만 기록된다.
-`prob_dd5_20` 은 Phase 2(보정 모델) 전까지 비어 있다.
+`prob_dd5_20` 은 **배포 확률** — `summary_p2.json.acceptance` 가 배치한 단의 확률이다(2026-09-08 현재 `deploy_mode=tones`, `tone_model=M1`; `info_only` 면 생산 모델 M3 를 정보로 기록). 행마다 출처 단은 `p2_prob_model_id`·`p2_tone_model`·`p2_deploy_mode` 로 확인한다(계약: `mrl/ledger.py` 열 의미 절). 그 옆의 `p2_*` **26개** 열(§12)이 사다리 오늘값(`p2_p_m1/m2/m3`)·구간·상태·귀속을 담는다(Phase 1 시절 행은 NaN).
 
 ---
 
@@ -162,7 +162,7 @@ python scripts/selftest.py     # 캐시 자기점검: 빈 열 · 유령 행 · �
 | Phase | 내용 | 상태 |
 |---|---|---|
 | **1** | 캐시 · v0 동결 포팅(parity) · 목표변수/에피소드 · 정직한 백테스트 리포트 · 일일 장부 · 자동화 | 진행 중 |
-| **2** | 보정 모델: `y_dd5_20` 확률 추정. **적합 파라미터 최대 5개**, 확장창 walk-forward(연 1회 재적합, 20거래일 퍼지, 블록 18~24개월). 홀드아웃 `2024-09-01` 이후는 최종 검증 1회 외 접근 금지. 채택 조건: 모든 블록에서 Brier skill(vs 기저율) > 0 **이고** VIX 내재 확률 대비 skill ≥ 0. 위반 시 v0 유지. 실험은 `VALIDATION.md` §8 장부에 번호를 붙여 기록 | 예정 |
+| **2** | 보정 모델: `y_dd5_20` 확률 추정. **적합 파라미터 최대 5개**(구현: 정확히 4개), 확장창 walk-forward(연 1회 재적합, 20거래일 퍼지, 블록 18~24개월). 홀드아웃 `2024-09-01` 이후는 최종 검증 1회 외 접근 금지. 채택 조건: 모든 블록에서 Brier skill(vs 기저율) > 0 **이고** VIX 내재 확률 대비 skill ≥ 0. 위반 시 v0 유지. 실험은 `VALIDATION.md` §8 장부에 번호를 붙여 기록 | 구현 완료 — 실험 #2 literal 실패 → 장부 #2a **경로 (b) 채택**(post hoc, 소유자 결정 2026-09-08) → `deploy_mode=tones`, 톤 모델 **M1**, M3 는 정보 표시(§12) |
 | **3** | 국면 모델 · 앙상블 · 비중 제안. **킬 규칙**: 라이브 장부에 ≥5% 낙폭 에피소드 8회 이상 또는 3년 경과 후(늦은 쪽) 블록 부트스트랩 95% 구간으로 평가, `y_dd5_20` Brier skill 이 0 을 넘지 못하면 대시보드를 "정보 제공 전용"으로 전환(톤·비중 제안 숨김) | 예정 |
 
 검토했으나 채택하지 않은 방향(`VALIDATION.md` §9): 계절성, 뉴스 LLM 감성, 딥러닝 가격 예측, 거시 나우캐스팅.
@@ -234,7 +234,8 @@ Python 3.12, `requirements.txt` 고정 설치, 커밋 전 `git pull --rebase -X 
 
 * cron `0 13 * * 0`(일요일 09:00 EDT / 08:00 EST) + 수동 실행(변형 선택 가능, 기본 `both`).
 * `scripts/build_cache.py` → `scripts/run_backtest_v0.py --variant both` → `weekly: YYYY-MM-DD` 커밋. 타임아웃 60분.
-* Phase 2 에서 보정 모델 재적합 단계가 여기에 붙는다.
+* Phase 2 단계가 그 뒤에 붙는다: `scripts/run_calibration.py --acceptance-rule amended`(하드컷 walk-forward + 라이브 계수 결정론 검사; `amended` 는 장부 #2a 경로 (b) 결정에 따른 사후 채택 규칙) →
+  `scripts/run_backtest_v1.py --all-configs` → `summary_p2.json.determinism.ok` 확인 → 커밋. 어느 단계든 실패하면 커밋하지 않는다(§12).
 
 ### GitHub Pages
 
@@ -251,6 +252,9 @@ Python 3.12, `requirements.txt` 고정 설치, 커밋 전 `git pull --rebase -X 
 | `tests/test_calendar.py` | 알려진 휴장일 · 주/월 기간말 판정 · 미완성 봉 제거 |
 | `tests/test_targets.py` | 합성 시계열로 목표변수 · 에피소드 정의 검증 |
 | `tests/test_replay_smoke.py` | 60거래일 구간 replay 가 예외 없이 돌고 열 계약을 만족 |
+| `tests/test_features.py` · `test_vol.py` · `test_model.py` · `test_calibrate.py` · `test_decision.py` · `test_events.py` | Phase 2 모듈 계약: 점 원칙(무작위 T 20개 비트 동일), VIX 내재 확률 식, 퍼지·기후학·블록 타일링, walk-forward 결정론·누수 카나리, 4-파라미터 예산, 결정층 히스테리시스·dwell·churn, 이벤트 표 |
+| `tests/test_ledger_p2.py` · `test_report_p2.py` | 장부 P2 열 왕복·라이브 Brier, p2 카드·보정/결정층 리포트 렌더(BAD_TOKEN 없음) |
+| `tests/test_scripts_integration.py` (Phase 2 부분) | `run_calibration.py --end 2006-12-29` 산출물·엄격 JSON·하드컷(마지막 20 라벨 NaN)·결정론 게이트(같은 입력 두 번 = 같은 CSV, 계수를 틀어 심으면 exit 1)·홀드아웃 거부(exit 1)·unlock 존재 시 exit 2, `run_backtest_v1.py` 완주·spec 불일치 exit 1, `daily.py` P2 장부 열·카드·모델 없음/spec 불일치 exit 1 |
 
 `test_parity.py` 통과가 "v0 동결 성공"의 정의다(`VALIDATION.md` §4).
 
@@ -259,4 +263,84 @@ Python 3.12, `requirements.txt` 고정 설치, 커밋 전 `git pull --rebase -X 
 ## 11. 문서
 
 * `ARCHITECTURE.md` — 모듈 계약(함수 시그니처·열 이름·원칙). 다른 모듈이 의존하므로 계약을 바꾸면 여기부터 고친다.
+* `ARCHITECTURE_PHASE2.md` — Phase 2 계약(보정 모델 p2 · 결정층 v1 · 스크립트 · 워크플로 · 테스트). 아래 §12 의 근거.
 * `VALIDATION.md` — 사전 등록 문서. 목표변수·평가·수용/킬 규칙·실험 장부. **결과를 본 뒤에는 항목을 지우지 않고 취소선으로 남긴다.**
+
+---
+
+## 12. Phase 2 — 보정 모델 p2 · 결정층 v1 (실험 #2)
+
+v0 벤치마크 위에, **적합 파라미터 정확히 4개**(절편 + x_vix·x_har·x_ma 계수)의 로지스틱으로 `y_dd5_20`(다음 20거래일 안에 -5%)의
+**확률**을 만들고, 그 확률을 기후학(기저율)·VIX 내재 확률 대비 Brier skill 로 채점하며, 3단계 상태기계(정상/주의/축소)로 가족용 톤에
+맵핑한다. v0 는 한 줄도 건드리지 않았고 모든 Phase 2 리포트 첫 줄에 v0 결과를 영구 표기한다. 계약은 `ARCHITECTURE_PHASE2.md`.
+
+### 12.1 무엇이 어디에
+
+```
+mrl/features.py    x_vix = logit(VIX 내재 확률 B1) · x_har = ln(HAR σ, GK+야간갭) − ln(VIX/100) · x_ma = Close/SMA180 − 1 (표준화 없음)
+mrl/vol.py         GK+OV 일변동 · HAR 성분 · 적합 log-HAR(보조 출력, 확률에 결합 금지) · 자기점검
+mrl/model.py       LogitModel(4 파라미터) · 사다리 M0(VIX 공식)→M1(보정)→M2(+실현변동성)→M3(+추세) · 귀속 · 저장/적재
+mrl/calibrate.py   재적합 일정(1월 첫 거래일) · 20일 퍼지 · 기후학 · walk-forward · 블록 채점 · 부트스트랩/DM/위상 검정 · §6 판정
+mrl/decision.py    r = p/clim 상태기계(격상 즉시, 격하 5세션 체류) · KPI · churn 경보
+mrl/events.py      FOMC/OPEX/쿼드위칭/NFP 달력(표시 전용)
+scripts/run_calibration.py   주간: 하드컷 → 사다리 walk-forward → 검정 → HAR → results/calib_p2_walkforward.csv · summary_p2.json · model_p2.json · docs/calibration_p2.html
+scripts/run_backtest_v1.py   주간: OOS 확률 → 결정층 → v0 와 같은 성적표 → results/backtest_v1.csv · summary_v1.json · docs/backtest_v1.html
+scripts/daily.py             매일: model_p2.json 을 **읽기만** 해서 오늘 확률·상태·귀속 → 장부 p2_* 열 · index.html 의 p2 카드 (재적합 금지)
+```
+
+### 12.2 실행
+
+```bash
+python scripts/run_calibration.py                 # 하드컷(2024-08-30)·walk-forward·검정·리포트. 로컬 ~11초
+python scripts/run_backtest_v1.py --all-configs   # 결정층 기본 + 민감도 3종(wide·symmetric_dwell·no_dwell, 보고만). ~15초
+python scripts/daily.py                           # v0 판정 뒤 P2 확률·상태·귀속을 장부에 쓰고 카드를 그린다 (+<1초)
+python scripts/run_calibration.py --holdout-final # 홀드아웃 최종 검증 **1회**. results/holdout_unlock.json 이 있으면 exit 2
+pytest -q tests/test_scripts_integration.py       # 짧은 창(2003~2006)으로 세 스크립트를 끝까지 돌려 산출물 계약을 검사
+```
+
+### 12.3 지켜지는 규칙 (스크립트가 강제)
+
+* **홀드아웃 하드컷** — `run_calibration.py` 는 `--holdout-final` 없이는 `bundle.close·spy_ohlc·cboe·fg·eod` 와 목표변수를 모두
+  2024-08-30 에서 **데이터 자체를** 자른다(라벨 마스크가 아님). 그래서 2024-08 의 마지막 20세션 라벨은 NaN 이고 24개월 블록 #11 의
+  채점 행은 418 이 아니라 398 이다. `--end` 가 2024-09-01 이후면 exit 1. `run_backtest_v1.py` 도 OOS 끝에서 종가·에피소드를 자른다.
+* **점 원칙** — `build_features(bundle, asof)` 는 asof 이후 행을 먼저 버리고 계산한다(무작위 T 20개 비트 동일성 테스트).
+* **파라미터 예산** — 매 재적합에서 M3 의 `n_params == 4` 를 assert. 5번째 슬롯은 비어 있고 장부 #3~#5 에 예약.
+* **결정론** — 난수는 전부 seed 0. 같은 입력의 두 실행은 CSV 바이트가 같다(테스트). 주간 작업은 새로 적합한 라이브 계수를
+  `results/model_p2.json` 과 비교한다: **입력 데이터 지문(SPY OHLC + VIX)이 같은데 계수 차 > 1e-9 면 exit 1(파일·커밋 없음)**.
+  지문이 다르면(Yahoo 재다운로드의 배당 조정계수 반올림 — SPY 조정 OHLC 가 상대 ~1.5e-6, 계수가 ~9e-6 움직인다, 실측 2026-09-08;
+  6자리 CSV 반올림만이면 ~2e-8) 결정론 검사가 아니므로 이동 폭을 `summary_p2.json.determinism` 에 기록·경고하고 새 파일을
+  쓴다(1e-4 초과는 '데이터 수정 의심' 경고 → 장부 검토; 손으로 고친 자료는 ≥1e-3 움직인다).
+  코드가 바뀌면(spec_sha256 변경) 새 파일 + `run.spec_changed=true` + 장부 기재 요구. 복구는 `results/model_p2.json` 을 손으로
+  지우는 것뿐이며 git 에 남는다.
+* **재적합은 주간에만** — `daily.py` 는 `model_p2.json` 이 없거나 `spec_sha256` 이 현재 코드와 다르면 exit 1(장부·페이지를 쓰지 않는다).
+  입력 결측(VIX·OHLC 없음)은 실패가 아니라 "확률 계산 불가": 확률·귀속 NaN, 상태 유지, 장부 `p2_input_missing` 에 사유.
+* **조용한 실패 금지** — v0 참조선만 조건 미충족 시 생략(+경고); 나머지는 예외로 죽는다. 모든 표에 n_blocks(=n/20) 병기.
+
+### 12.4 결과 (계산 2026-09-07 · 채택 판정 2026-09-08 #2a 경로 (b) · 캐시 2026-09-04 · OOS 2003-01-02~2024-08-30, 5,453세션 · 라벨 5,433행 · 창 271 · 기저율 15.4%)
+
+| 단 | Brier | BSS vs 기후학 | vs VIX(B1) | vs BGK | vs M1 | AUC | 24개월 블록 >0 (기후학) | ≥0 (B1) |
+|---|---|---|---|---|---|---|---|---|
+| M0 VIX 공식 | 0.1512 | −0.136 | 0 | −0.124 | −0.235 | 0.688 | — | — |
+| M1 VIX 보정 | 0.1224 | +0.080 | +0.191 | +0.090 | 0 | 0.680 | 10/11 | 9/11 |
+| M2 +실현변동성 | 0.1217 | +0.086 | +0.195 | +0.095 | +0.006 | 0.685 | 10/11 | 9/11 |
+| **M3 +추세** | **0.1210** | **+0.091** | **+0.200** | **+0.101** | **+0.012** | 0.687 | **10/11** (실패 2019-20 −0.037) | **9/11** (실패 2007-08 −0.082, 2017-18 −0.029) |
+
+* 단 간 손실차(×1e-4, 40일 블록 부트스트랩 95%, DM t HAC 19): M0→M1 +288 [173, 401] t 5.4 · M1→M2 +7.1 [−1.3, 15.1] t 1.7 ·
+  M2→M3 +7.2 [−7.8, 22.5] t 1.0 · **M1→M3 +14.3 [−3.0, 32.6] t 1.6 (p 0.11)**. VIX 대비 skill 의 대부분은 편향 보정(M1)이고
+  HAR·추세의 정보 이득은 0 을 포함하는 구간 안에 있다 — 가족용 문구는 "보정된 VIX 에 조금 더".
+* **§6 문자 그대로의 판정: 실패**(실패 블록 3·8·9) → 사전 등록 결과는 `deploy_mode=info_only` 였다. #2a 완화안(post hoc)으로
+  채점하면 M1 만 A∧B∧C 를 통과한다(M3 는 기준 C 미충족: M2→M3 손실차 95% 하한 −7.8×1e-4 ≤ 0) → **소유자가 2026-09-08 장부 #2a 에
+  경로 (b) 를 기재해 채택**했고, 이후 모든 실행·주간 워크플로는 `--acceptance-rule amended` 로 채점한다 → **`deploy_mode=tones`,
+  `tone_model=M1`**; M3 는 정보 표시(배포 안 함). 카드는 "톤 적용 — M1 배포" 로 상태·톤·비중을 제안한다.
+* **블록 민감도(§8.2, 2026-09-08 추가)**: 같은 완화안 규칙을 사전 등록된 18개월 블록 표로 재채점하면 어느 단도 A 를 통과하지 못해
+  `deploy_mode=info_only` 가 된다(M1 최소 블록 BSS 기후학 −0.0996, 2018-01~2019-09). **배치 판정은 블록 정의에 의존한다** —
+  `summary_p2.json.acceptance.sensitivity_blocks` 에 기계가 읽을 수 있게 남고, 보정 리포트 머리·판정 상자·카드 정직 스트립에 상시 표시된다.
+* 결정층 v1(default) — **배포 = M1**: 상태 전환 4.4회/년(v0 82.6), 경고 점유 22.5%(v0 46.5%), 경고 상태 -5%/20일 비율
+  22.5%(주의)/42.9%(축소) vs 정상 12.2%, 진짜 경보 비중 34.2% vs 기저율 15.4% vs v0 12.8%, 5세션 최대 변경 2(상한 3),
+  **churn 경보 68세션(최대 13/252) — `summary_v1.json.flags` 에 경고**. 배분 CAGR 8.6% vs 보유 10.8%,
+  MaxDD −34.8% vs −55.2% (2003~2024-08; v0 2015~26 은 9.9% vs 13.9%, −16.1% vs −33.7% — 구간이 달라 직접 비교 불가).
+* (정보 표시, 배포 안 함) 같은 규칙을 M3 로 돌리면: 3.9회/년, 경고 점유 20.6%, 26.2%/48.2% vs 정상 11.3%, 진짜 경보 50.0%,
+  churn 경보 31세션(최대 14/252), CAGR 10.2%, MaxDD −31.0% — `summary_v1.json.info_layers.M3`. 톤·비중 제안이 아니다.
+* 소거: Parkinson(M3-PK) Brier 0.1208, 학습 1996 시작(M3-HAR96) 0.1231, C∈{0.1,1,10} 0.1214/0.1210/0.1209. HAR-RV 보조 출력 OOS log-MAE 0.279,
+  R²(log) 0.49 vs VIX 0.22. v0 참조선(Platt 2, 2017~): Brier 0.1427, BSS vs 기후학 −0.010, AUC 0.567 → 모델 입력 후보에서 영구 제외.
+* 정직 문구(§16)와 리스크는 `docs/calibration_p2.html` ⑨ 와 카드의 정직 스트립에 상시 표시된다. 자세한 숫자는 `results/summary_p2.json`.

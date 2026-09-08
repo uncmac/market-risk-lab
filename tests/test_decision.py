@@ -277,6 +277,30 @@ def test_structural_bound_max_three_changes_in_any_five_sessions():
     del rng
 
 
+def test_structural_max_changes_enumeration_matches_preregistered_bound():
+    """전수 열거 상한: 기본(dwell 5) == 3 == STRUCTURAL_MAX_CHANGES_5, wide 도 3, dwell 3 → 3, dwell 2 → 4, dwell ≤ 1·no_dwell → 5."""
+    assert D.structural_max_changes(D.DecisionConfig()) == D.STRUCTURAL_MAX_CHANGES_5 == 3
+    assert D.structural_max_changes(D.config_from_name("wide")) == 3
+    assert D.structural_max_changes(D.DecisionConfig(dwell=3)) == 3
+    assert D.structural_max_changes(D.DecisionConfig(dwell=2)) == 4
+    assert D.structural_max_changes(D.DecisionConfig(dwell=1)) == 5
+    assert D.structural_max_changes(D.config_from_name("no_dwell")) == 5
+    assert D.structural_max_changes(D.config_from_name("symmetric_dwell")) <= 3
+    # 상한이 tight 하다: 적대적 경로가 정확히 상한을 달성 (기본·dwell 2)
+    assert int(_run(ADVERSARIAL_CYCLE * 10)["changed"].astype(int).rolling(5, min_periods=1).sum().max()) == 3
+    out2 = _run([3.0, 3.0, 0.5, 1.6, 3.0, 3.0, 0.5, 1.6] * 20, cfg=D.DecisionConfig(dwell=2))
+    assert int(out2["changed"].astype(int).rolling(5, min_periods=1).sum().max()) == 4
+    # 무작위 경로의 실측 최대치는 어떤 구성에서도 열거 상한을 넘지 않는다
+    for name in D.SENSITIVITY_NAMES:
+        cfg = D.config_from_name(name)
+        bound = D.structural_max_changes(cfg)
+        for seed in range(3):
+            out = _run(_random_r(2000, seed=seed, nan_share=0.02), cfg=cfg)
+            assert int(out["changed"].astype(int).rolling(5, min_periods=1).sum().max()) <= bound, (name, seed)
+    with pytest.raises(ValueError):
+        D.structural_max_changes(D.DecisionConfig(), window=0)
+
+
 def test_symmetric_dwell_and_no_dwell_variants():
     sym = D.config_from_name("symmetric_dwell")
     # 격상도 체류 5 필요: normal(days 0) 에서 r=3 이어도 유지, days=5 부터 격상
@@ -384,6 +408,7 @@ def test_kpis_keys_and_consistency(synth_kpi):
     assert k["true_alarm_share_v0_ref"]["lo"] < k["true_alarm_share_v0_ref"]["hi"]
     assert k["n_warn_runs"] == len(E._warning_runs(pd.Series(is_warn)))
     assert k["max_changes_any_5_sessions"] <= 3 and k["structural_bound"] == 3 and k["structural_bound_ok"] is True
+    assert k["structural_window"] == 5
     for s in P2_STATES:
         v = k["dd5_rate_by_state"][s]
         assert math.isnan(v) or 0.0 <= v <= 1.0
@@ -423,3 +448,13 @@ def test_kpis_switches_per_year_ceiling_flag():
     assert k["churn_alert_any"] is True and k["churn_alert_sessions"] > 0
     assert k["median_warn_run"] >= 5                                # 경고 런은 최소 5세션(dwell)
     assert k["median_run_by_state"]["reduce"] >= 5
+    assert k["max_changes_any_5_sessions"] == 3 and k["structural_bound_ok"] is True
+    # no_dwell 구성의 KPI 는 그 구성의 열거 상한(5)으로 판정한다 (attrs.config 경유)
+    nd = _run([3.0, 0.0] * 100, cfg=D.config_from_name("no_dwell"))
+    k_nd = D.kpis(nd, pd.Series(0.0, index=nd.index), None)
+    assert k_nd["structural_bound"] == 5 and k_nd["max_changes_any_5_sessions"] == 5 and k_nd["structural_bound_ok"] is True
+    # attrs 에 config 가 없으면 기본 구성으로 계산하고 경고를 남긴다(조용히 넘기지 않음)
+    bare = states[["state", "changed"]].copy()
+    bare.attrs = {}
+    k_bare = D.kpis(bare, y, None)
+    assert k_bare["structural_bound"] == 3 and any("config" in w for w in k_bare["warnings"])
