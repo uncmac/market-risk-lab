@@ -396,7 +396,7 @@ def test_p3_card_hides_skill_numbers_before_six_windows(no_kill):
     """n_eff < 6 이면 BSS 숫자를 회색으로도 내지 않고 사유를 남긴다(§8.4)."""
     h = report.p3_card(_today_p3(), "tones")
     vis = _visible(h)
-    assert re.search(r"현재 skill\s*[+-]?\d", vis) is None   # BSS 점추정이 그대로 새면 안 된다
+    assert re.search(r"정확도 점수\(기준선 대비\)\s*[+-]?\d", vis) is None   # BSS 점추정이 그대로 새면 안 된다
     assert re.search(r"BSS\s*[+-]\d", vis) is None
     assert "§8.4" in vis and "bss 숨김" in vis
     # 36개월·n_eff 40 이면 숫자가 나온다
@@ -406,7 +406,7 @@ def test_p3_card_hides_skill_numbers_before_six_windows(no_kill):
                             "score": {"n": 800, "n_eff": 40.0, "bss_clim": 0.062,
                                       "ci_bss_clim": [0.01, 0.12]}})
     h2 = report.p3_card(grown, "tones")
-    assert "현재 skill" in _visible(h2) and "+0.062" in _visible(h2)
+    assert "지금까지의 정확도 점수(기준선 대비)" in _visible(h2) and "+0.062" in _visible(h2)
     assert "킬룰 상태: provisional" in _visible(h2)
     _no_bad(h2)
 
@@ -439,8 +439,8 @@ def _pages(tmp_path, s=None, t=None, charts=None):
 
 def test_sizing_report_has_every_section(tmp_path, no_kill):
     html = _pages(tmp_path)["sizing_p3.html"]
-    for sec in ("① v0 completed 요약", "② p2 결정층", "③ 정직한 읽기", "④ 백테스트 성적표",
-                "⑤ D_max 사다리", "⑥ 민감도", "⑦ 에피소드 손익", "⑧ 유지 조건", "⑨ 63/126/252",
+    for sec in ("① v0 completed 요약", "② p2 판정 규칙", "③ 정직한 읽기", "④ 백테스트 성적표",
+                "⑤ 담을 수 있는 최대치 단계", "⑥ 민감도", "⑦ 하락 사건별 손익", "⑧ 유지 조건", "⑨ 63/126/252",
                 "⑩ 규약과 해시", "정직 문구와 리스크"):
         assert sec in html, sec
     assert "2003+" in html and "1993+" in html               # 창별 표
@@ -453,8 +453,8 @@ def test_sizing_report_has_every_section(tmp_path, no_kill):
 
 def test_regime_report_has_every_section_and_param_table(tmp_path, no_kill):
     html = _pages(tmp_path)["regime_p3.html"]
-    for sec in ("① 등록부", "② 사다리 확장", "③ 블록 표", "④ θ 경로", "⑤ P(고변동) 밴드",
-                "⑥ 시대별 AUC", "⑦ 소거", "⑧ 신뢰도", "⑨ 결정론", "정직 문구와 리스크"):
+    for sec in ("① 등록부", "② 단계 늘려 보기", "③ 블록 표", "④ θ 경로", "⑤ P(고변동) 밴드",
+                "⑥ 시대별 AUC", "⑦ 소거", "⑧ 말한 확률이 실제와 맞나", "⑨ 결정론", "정직 문구와 리스크"):
         assert sec in html, sec
     # §14 파라미터 회계 표를 그대로
     assert "파라미터 회계" in html
@@ -487,7 +487,7 @@ def test_every_page_carries_the_acceptance_verdict_line_verbatim(tmp_path, no_ki
 
 def test_every_page_opens_with_no_added_skill(tmp_path, no_kill):
     for name, html in _pages(tmp_path).items():
-        assert "Phase 3 는 skill 을 더하지 않는다" in html, name
+        assert "맞히는 실력을 더하지 못했습니다" in html, name
 
 
 def test_pages_show_info_only_banner_when_p2_is_info_only(tmp_path, no_kill):
@@ -654,13 +654,16 @@ def test_pages_and_card_are_deterministic(tmp_path, no_kill):
     s = _summary_p3()
     oos, bt, spy = _frames()
     digests = []
+    # 파일 **이름**이 같아야 한다 — 알약이 자매 문서(<stem>.en.html)를 가리키므로 이름이 내용에 들어간다.
     for i in (1, 2):
+        run = tmp_path / f"run{i}"
+        run.mkdir()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ch = report.charts_p3(oos, bt, spy, s, None)
-            report.render_sizing_report(s, {}, {}, tmp_path / f"a{i}.html", dict(ch))
-            report.render_regime_report(s, tmp_path / f"b{i}.html", dict(ch))
-        digests.append(tuple((tmp_path / f"{x}{i}.html").read_bytes() for x in "ab"))
+            report.render_sizing_report(s, {}, {}, run / "sizing_p3.html", dict(ch))
+            report.render_regime_report(s, run / "regime_p3.html", dict(ch))
+        digests.append(tuple((run / f"{x}.html").read_bytes() for x in ("sizing_p3", "regime_p3")))
     assert digests[0] == digests[1]
     assert report.p3_card(_today_p3(), "tones") == report.p3_card(_today_p3(), "tones")
 
@@ -755,7 +758,7 @@ def test_track_record_renders_scenario_bin_and_state_tables_with_grey_rows(tmp_p
     report.render_track_record(t, s, out, {})
     html = out.read_text(encoding="utf-8")
     vis = _visible(html)
-    for head in ("구간 하한", "≥10% 에피소드 시작 비율", "회색(단독 표시 금지)", "Wilson 하한"):
+    for head in ("구간 하한", "10% 넘게 떨어지기 시작한 비율", "회색(단독 표시 금지)", "Wilson 하한"):
         assert head in vis, head
     assert "12.8" in vis and "48.2%" in vis and "24.6%" in vis and "72.7%" in vis   # 얇은 reduce 행
     assert "회색(단독 표시 금지): [0.25, 1.00), reduce" in vis                       # 회색 배지

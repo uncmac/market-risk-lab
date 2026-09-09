@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from mrl import report  # noqa: E402
 from mrl.config import DATA_DIR  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not (DATA_DIR / "close.csv").exists(), reason="data/ 캐시 없음")
@@ -618,7 +619,7 @@ def test_daily_writes_p2_ledger_columns_and_card(tmp_path):
     html = (docs / "index.html").read_text(encoding="utf-8")
     txt = _visible_text(html)
     assert not BAD_TOKEN.search(txt), BAD_TOKEN.findall(txt)[:5]
-    assert 'id="p2"' in html and "다음 20거래일 안에 -5% 하락할 확률" in html and "100일 중 약" in html
+    assert 'id="p2"' in html and "앞으로 20거래일(약 한 달) 안에 5% 넘게 떨어질 확률" in html and "100일 중 약" in html
     assert 'href="calibration_p2.html"' in html and 'href="backtest_v1.html"' in html
     assert html.index("오늘 판정") < html.index('id="p2"')                          # v0 판정 블록 아래
 
@@ -730,18 +731,18 @@ def test_daily_ledger_and_card_use_deployed_probability(tmp_path, acc, rung, pre
     assert not BAD_TOKEN.search(txt), BAD_TOKEN.findall(txt)[:5]
     i0 = html.index('id="p2"')                                                   # v0 판정·장부 블록은 그대로 두고 P2 카드만 본다
     card = html[i0:html.index("<section", i0)]
-    assert f"이런 날 {report_nat_freq(p)}" in card                                # 헤드라인 = 배포 확률
+    assert report_nat_freq(p) in card                                            # 헤드라인 = 배포 확률
     assert acc["verdict_line"] in _visible_text(card)                            # 카드가 배치 판정을 그대로 적는다
     if deployed:
-        assert f"톤 적용 — {rung} 배포" in card and "주식 비중" in card
+        assert f"이 판정을 실제로 씁니다 — {rung}" in card and re.search(r"주식 비중\s*\d+\s*%", card)
         if rung != "M3":
-            assert "정보 표시(배포 안 함)" in card                                 # 배포되지 않은 M3 는 정보 라벨
+            assert report.INFO_DISPLAY_BI[0] in card                              # 배포되지 않은 M3 는 정보 라벨
     else:
-        assert "정보 표시(배포 안 함)" in card and "주식 비중" not in card
-        assert 'class="pill"' not in card and "배포된 단이 없습니다" in _visible_text(card)
+        assert report.INFO_DISPLAY_BI[0] in card and not re.search(r"주식 비중\s*\d+\s*%", card)
+        assert 'class="pill"' not in card and "실제로 쓰는 모델이 없습니다" in _visible_text(card)
         # 배치 주장 자체가 없다 — '톤 적용' 태그도, tone_model 표기도 없고, 정직 스트립이 그렇게 말한다
-        assert "톤 적용" not in card and "tone_model M" not in card
-        assert "배포된 단 없음 — 톤·비중 주장 없음" in _visible_text(card)
+        assert "이 판정을 실제로 씁니다" not in card and "tone_model M" not in card
+        assert "실제로 쓰는 단계 없음 — 신호등 판정도 주식 비중도 주장하지 않음" in _visible_text(card)
 
 
 CONJUNCTIVE_INFO_ONLY_ACC = {
@@ -787,10 +788,10 @@ def test_daily_card_states_the_conjunctive_verdict_and_claims_no_tone(tmp_path):
     assert "24개월 표: M1 통과" in txt and "18개월 표: 실패(최소 블록 BSS_clim −0.0996)" in txt
     assert "두 표 모두 통과 요구(소유자 결정 2026-09-08)" in txt and "배치 없음(정보 제공 전용)" in txt
     # ② 배치 주장은 어디에도 없다
-    assert "톤 적용" not in card and "주식 비중" not in card and "tone_model M" not in card
+    assert "이 판정을 실제로 씁니다" not in card and not re.search(r"주식 비중\s*\d+\s*%", card) and "tone_model M" not in card
     assert 'class="pill"' not in card                                     # 톤 pill 없음
-    assert "정보 표시(배포 안 함)" in txt and "시험 운용 — 비중 제안 아님" in txt
-    assert "배포된 단이 없습니다" in txt and "배포된 단 없음 — 톤·비중 주장 없음" in txt
+    assert report.INFO_DISPLAY_BI[0] in txt and report.INFO_ONLY_BI[0] in txt
+    assert "실제로 쓰는 모델이 없습니다" in txt and "실제로 쓰는 단계 없음 — 신호등 판정도 주식 비중도 주장하지 않음" in txt
     # ③ 장부에도 배치 없음이 기록된다
     row = pd.read_csv(ledger).iloc[0]
     assert row["p2_deploy_mode"] == "info_only" and pd.isna(row["p2_tone_model"])

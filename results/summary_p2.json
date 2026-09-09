@@ -2,7 +2,7 @@
  "schema_version": 1,
  "disclosure": "#2 사전 관측 참조",
  "run": {
-  "generated_at_utc": "2026-09-08T18:12:01Z",
+  "generated_at_utc": "2026-09-09T00:43:27Z",
   "end": "2024-08-30",
   "wf_end_exclusive": "2024-08-31",
   "holdout_start": "2024-09-01",
@@ -25,7 +25,7 @@
   "live_data_sha256": "6acfb88a95f30901548e4ec1bdef82bc4ebcba1d0ab8b1905c0a36a49e174a37",
   "spec_changed": false,
   "live_mode": "pre_holdout_hard_cut",
-  "git_sha": "d4c3f2622c30e66b705e67592bf44fca27970b5b",
+  "git_sha": "8def34c9fc043df348d9f59b56ab08d6b2443ef6",
   "python": "3.13.5",
   "pandas": "2.2.3",
   "numpy": "2.1.3",
@@ -57,8 +57,8 @@
   "param_count": 4,
   "budget": 5,
   "oos_csv_sha256": "8b48b63cbe60a48128a32af5bc41cda0efafd9917eb2e275b669b887813e7e34",
-  "ladder_runtime_sec": 3.0,
-  "score_runtime_sec": 14.2
+  "ladder_runtime_sec": 2.3,
+  "score_runtime_sec": 12.8
  },
  "headline": {
   "oos_start": "2003-01-02",
@@ -11905,9 +11905,9 @@
     "24",
     "18"
    ],
-   "git_sha": "d4c3f2622c30e66b705e67592bf44fca27970b5b",
+   "git_sha": "8def34c9fc043df348d9f59b56ab08d6b2443ef6",
    "first_refit": "2003-01-02",
-   "determinism_status": "data_changed"
+   "determinism_status": "compared"
   }
  },
  "param_band": [
@@ -16285,20 +16285,19 @@
   "old_model_id": "p2m3-81c2a6bf-2024-08-30",
   "old_refit_date": "2024-08-30",
   "old_spec_sha256": "81c2a6bf7d43b57edda462f8e8133f13de616664d6e21b21cc92f7b1fbf992d2",
-  "data_changed": true,
-  "old_data_sha256": "9b125057424cbad90d2e5f363c0201b0d2b22bac062debba92413e1eb4947e8a",
-  "max_abs_diff": 5.981060599236088e-06,
+  "data_changed": false,
+  "old_data_sha256": "6acfb88a95f30901548e4ec1bdef82bc4ebcba1d0ab8b1905c0a36a49e174a37",
+  "max_abs_diff": 0.0,
   "diffs": {
-   "intercept": 1.2865115948113015e-06,
+   "intercept": 0.0,
    "clim": 0.0,
-   "x_vix": 6.424054177500693e-09,
-   "x_har": 5.1815758889128816e-06,
-   "x_ma": 5.981060599236088e-06
+   "x_vix": 0.0,
+   "x_har": 0.0,
+   "x_ma": 0.0
   },
-  "status": "data_changed",
+  "status": "compared",
   "ok": true,
-  "material_drift": false,
-  "note": "입력 데이터 지문 변경(캐시 재구축) → 계수 이동 최대 5.981e-06 ≤ 0.0001: 재조정 반올림 수준. 새 파일을 쓴다",
+  "note": "기존 계수와 일치 (최대 차 0.00e+00 ≤ 1e-09, 입력 지문 동일)",
   "live_mode": "pre_holdout_hard_cut",
   "refit_twice_max_abs_diff": 0.0,
   "data_sha256": "6acfb88a95f30901548e4ec1bdef82bc4ebcba1d0ab8b1905c0a36a49e174a37",
@@ -16324,5 +16323,5 @@
   "model_json": "C:\\Users\\CJY_Laptop\\market-risk-lab\\results\\model_p2.json",
   "report_html": "C:\\Users\\CJY_Laptop\\market-risk-lab\\docs\\calibration_p2.html"
  },
- "total_runtime_sec": 19.7
+ "total_runtime_sec": 17.2
 }

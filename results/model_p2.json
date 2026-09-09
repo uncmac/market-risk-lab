@@ -40,9 +40,9 @@
       "24",
       "18"
     ],
-    "git_sha": "d4c3f2622c30e66b705e67592bf44fca27970b5b",
+    "git_sha": "8def34c9fc043df348d9f59b56ab08d6b2443ef6",
     "first_refit": "2003-01-02",
-    "determinism_status": "data_changed"
+    "determinism_status": "compared"
   },
-  "created_at_utc": "2026-09-08T18:12:01Z"
+  "created_at_utc": "2026-09-09T00:43:27Z"
 }

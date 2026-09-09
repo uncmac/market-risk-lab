@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "n_rows": 1,
+  "n_rows": 2,
   "n_scored": 0,
   "n_eff": 0.0,
   "live_start": null,
@@ -49,7 +49,7 @@
     "holdout_locked": false,
     "members": {},
     "score": null,
-    "asof": "2026-09-04",
+    "asof": "2026-09-08",
     "rule": "1차 36개월(점추정 ≤ 0 → info_only, sticky) · 2차 = 8회 또는 60개월 중 먼저 · 이후 12개월마다 재평가 · 라벨은 부트스트랩 CI 하한(VALIDATION.md §7 실행 해석, 장부 #7)",
     "rearm": {
       "automatic": false,
@@ -57,7 +57,7 @@
     }
   },
   "alarms": [],
-  "replay_mismatch_count": null,
+  "replay_mismatch_count": 0,
   "coverage": {
     "vix80": null,
     "har80": null
@@ -100,7 +100,7 @@
   },
   "panel": {
     "stage": "0-3m",
-    "asof": "2026-09-04",
+    "asof": "2026-09-08",
     "live_start": null,
     "i_p_level": {
       "n": 0,
@@ -290,7 +290,7 @@
     "x_alarms": {
       "alarms": [],
       "codes": [],
-      "replay_mismatch_count": null
+      "replay_mismatch_count": 0
     },
     "xi_registry": {
       "members": {},
@@ -343,19 +343,17 @@
     },
     "notes": [
       "라이브 시작 전: prob_dd5_20 이 있고 p2_deploy_mode == 'tones' 인 행이 없습니다 (Phase 2 info_only 기간·재현 행은 라이브가 아닙니다 — §8.1)",
-      "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
-      "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
-      "alarms: 채점 가능한 행이 없습니다(홀드아웃 잠금)",
-      "장부에 P3 행이 없습니다 (schema 2 기록만 있음 — P3 열은 빈 값으로 승격되어 있습니다)"
+      "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+      "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+      "alarms: 채점 가능한 행이 없습니다(홀드아웃 잠금)"
     ]
   },
   "holdout_locked": false,
   "notes": [
     "라이브 시작 전: prob_dd5_20 이 있고 p2_deploy_mode == 'tones' 인 행이 없습니다 (Phase 2 info_only 기간·재현 행은 라이브가 아닙니다 — §8.1)",
-    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
-    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
-    "alarms: 채점 가능한 행이 없습니다(홀드아웃 잠금)",
-    "장부에 P3 행이 없습니다 (schema 2 기록만 있음 — P3 열은 빈 값으로 승격되어 있습니다)"
+    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+    "alarms: 채점 가능한 행이 없습니다(홀드아웃 잠금)"
   ],
-  "n_p3_rows": 0
+  "n_p3_rows": 1
 }

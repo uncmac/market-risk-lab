@@ -56,6 +56,10 @@ from mrl.data import load_cache                                          # noqa:
 from mrl import signals_v0 as S                                          # noqa: E402
 from mrl.replay import cell_table, replay_v0, verify_replay             # noqa: E402
 from mrl.signals_v0 import BASKETS, VARIANTS                             # noqa: E402
+from mrl.i18n import bi, bi_html                                         # noqa: E402
+# 비교 페이지도 리포트와 같은 쉬운 한국어·한영 도구를 쓴다 (STYLE_I18N.md §1) — 표현 전용, 계산과 무관
+from mrl.report_v0 import (_HONESTY_PLAIN, _SIGNAL_BI, _bi_h2, _bi_h3,   # noqa: E402
+                           _bi_img, _bi_note, _bi_warns, _substitution_en, _unit, _variant_bi)
 
 CHART_NAMES = ("cumret", "tone_bands", "fwd_box", "switches")
 CHART_CAPTIONS = {
@@ -63,6 +67,24 @@ CHART_CAPTIONS = {
     "tone_bands": "SPY 종가(로그)와 v0 톤 밴드. 세로 점선 = ≥10% 에피소드 고점(빨강)·저점(파랑).",
     "fwd_box": "톤별 다음 20거래일 SPY 수익률 상자그림 (수염 5/95분위).",
     "switches": "월별 톤 전환 횟수.",
+}
+
+# 비교 페이지용 그림 설명 — (쉬운 한국어, English). 그림 안 글자는 영어로 두고 설명만 두 벌 심는다
+# (STYLE_I18N.md §1: 차트는 이중화하지 않는다).
+CHART_CAPTIONS_BI = {
+    "cumret": ("100원을 넣었으면 얼마가 됐을까(세로축은 로그): 그냥 SPY 를 계속 보유했을 때와, 신호등 판정대로 "
+               "주식 비중을 100/100/100/50/25% 로 조절했을 때. 판정이 바뀔 때마다 거래 비용 0.05% 를 뺐습니다.",
+               "What 100 would have become (log scale): just holding SPY, versus following the traffic-light call and "
+               "holding 100/100/100/50/25% in stocks. A 0.05% trading cost is subtracted at every change."),
+    "tone_bands": ("SPY 종가(로그)에 신호등 판정을 색으로 깔았습니다. 세로 점선은 10% 넘게 떨어진 사건의 "
+                   "고점(빨강)과 바닥(파랑)입니다.",
+                   "SPY's closing price (log scale) with the traffic-light call shaded behind it. The dotted lines mark "
+                   "the peak (red) and trough (blue) of each decline of 10% or more."),
+    "fwd_box": ("신호등 판정별로, 그 다음 20거래일 수익률이 어디에 모였는지 상자로 그린 것입니다. "
+                "상자는 가운데 절반, 수염은 아래위 5%~95% 구간입니다.",
+                "For each traffic-light call, where SPY's return over the next 20 trading days landed. The box is the "
+                "middle half; the whiskers reach the 5th and 95th percentiles."),
+    "switches": ("판정이 한 달에 몇 번이나 바뀌었는지.", "How many times the call changed each month."),
 }
 
 
@@ -372,6 +394,9 @@ def _headline_json(s: dict) -> dict:
 
 # ------------------------------------------------------------------
 # 두 변형 비교 페이지 (docs/backtest_v0.html, --variant both)
+#
+# 이 페이지는 mrl/report_v0.py 가 아니라 여기서 만든다. 그래서 한/영 두 벌과 쉬운 한국어도
+# 여기서 함께 심는다 (STYLE_I18N.md §1·§2). 문구만 바꾸고 숫자·판정·표 구성은 건드리지 않는다.
 # ------------------------------------------------------------------
 def _fmt(v, kind: str) -> str:
     if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
@@ -383,19 +408,27 @@ def _fmt(v, kind: str) -> str:
     if kind == "num":
         return f"{float(v):.2f}"
     if kind == "days":
-        return f"{float(v):.0f}일"
+        return _unit(f"{float(v):.0f}", "일", "days")      # 숫자는 한 번, 단위만 두 벌
     return RPT._esc(str(v))
 
 
-def _table(headers: list[str], rows: list[list[str]], first_col_left: bool = True) -> str:
-    th = "".join(f'<th class="{"" if (i == 0 and first_col_left) else "num"}">{RPT._esc(h)}</th>' for i, h in enumerate(headers))
+def _hd(h) -> str:
+    """표 머리글 한 칸. (한국어, English) 짝이면 두 벌 심고, 그냥 문자열이면 식별자로 보고 그대로 둔다."""
+    if isinstance(h, (tuple, list)):
+        return bi(h[0], h[1])
+    return RPT._esc(str(h))
+
+
+def _table(headers: list, rows: list[list[str]], first_col_left: bool = True) -> str:
+    """열 제목만 두 언어. 셀 값은 그대로 둔다 (STYLE_I18N.md §1)."""
+    th = "".join(f'<th class="{"" if (i == 0 and first_col_left) else "num"}">{_hd(h)}</th>' for i, h in enumerate(headers))
     body = "".join("<tr>" + "".join(f'<td class="{"" if (i == 0 and first_col_left) else "num"}">{c}</td>'
                                     for i, c in enumerate(r)) + "</tr>" for r in rows)
     return f'<div class="tblwrap"><table><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
-def _headline_rows(res: dict) -> list[tuple[str, str, str]]:
-    """(라벨, 값 faithful, 값 completed) 헤드라인 표 행."""
+def _headline_rows(res: dict) -> list[tuple]:
+    """((한국어, English), 값 faithful, 값 completed) 헤드라인 표 행."""
     vs = list(res)
 
     def cell(v, path, kind):
@@ -409,76 +442,134 @@ def _headline_rows(res: dict) -> list[tuple[str, str, str]]:
     def pair(v, p1, p2, kind, sep=" / "):
         return f"{cell(v, p1, kind)}{sep}{cell(v, p2, kind)}"
 
-    rows = [("거래일 수", *[cell(v, ("run", "n_days"), "int") for v in vs]),
-            ("재현 실행 시간(초)", *[cell(v, ("run", "replay_runtime_sec"), "num") for v in vs]),
-            ("20일 방향 적중 / 항상-상승 기준선", *[pair(v, ("headline", "hit_20_all"), ("headline", "baseline_20"), "pct") for v in vs]),
-            ("60일 방향 적중 / 기준선", *[pair(v, ("headline", "hit_60_all"), ("headline", "baseline_60"), "pct") for v in vs])]
+    rows = [(("계산에 쓴 거래일 수", "trading days used"), *[cell(v, ("run", "n_days"), "int") for v in vs]),
+            (("다시 계산하는 데 걸린 시간(초)", "time to recompute (seconds)"),
+             *[cell(v, ("run", "replay_runtime_sec"), "num") for v in vs]),
+            (("20일 뒤 방향 적중률 / 무조건 오른다고 할 때", "hit rate 20 days ahead / always saying up"),
+             *[pair(v, ("headline", "hit_20_all"), ("headline", "baseline_20"), "pct") for v in vs]),
+            (("60일 뒤 방향 적중률 / 무조건 오른다고 할 때", "hit rate 60 days ahead / always saying up"),
+             *[pair(v, ("headline", "hit_60_all"), ("headline", "baseline_60"), "pct") for v in vs])]
     for t in TONES:
-        rows.append((f"20일 적중 · {RPT.TONE_KO.get(t, t)}({t}) [n]",
+        rows.append(((f"20일 뒤 적중률 · {RPT.TONE_KO.get(t, t)}({t}) [표본]", f"hit rate 20 days ahead · {t} [sample]"),
                      *[f"{cell(v, ('headline', 'hit_20_by_tone', t), 'pct')} [{cell(v, ('headline', 'n_20_by_tone', t), 'int')}]" for v in vs]))
-    rows.append(("-5%/20일 낙폭 기저율", *[cell(v, ("headline", "dd5_20_base_rate"), "pct") for v in vs]))
+    rows.append((("20일 안에 5% 넘게 떨어진 평소 비율", "how often it normally falls 5% or more within 20 days"),
+                 *[cell(v, ("headline", "dd5_20_base_rate"), "pct") for v in vs]))
     for t in TONES:
-        rows.append((f"-5%/20일 낙폭 비율 · {RPT.TONE_KO.get(t, t)}({t})", *[cell(v, ("headline", "dd5_20_rate_by_tone", t), "pct") for v in vs]))
-    rows += [("≥10% 에피소드 탐지 (탐지/평가가능)",
+        rows.append(((f"20일 안에 5% 넘게 떨어진 비율 · {RPT.TONE_KO.get(t, t)}({t})",
+                      f"fell 5% or more within 20 days · {t}"),
+                     *[cell(v, ("headline", "dd5_20_rate_by_tone", t), "pct") for v in vs]))
+    rows += [(("10% 넘게 떨어진 사건을 미리 경고했나 (경고 / 평가 가능)",
+               "declines of 10% or more flagged in advance (flagged / assessable)"),
               *[f"{cell(v, ('headline', 'n_detected_10'), 'int')}/{cell(v, ('headline', 'n_evaluable_10'), 'int')} ({cell(v, ('headline', 'detection_rate_10'), 'pct')})" for v in vs]),
-             ("≥10% 탐지율 · 무작위 순환 이동 기준선", *[cell(v, ("headline", "null_detection_rate_10"), "pct") for v in vs]),
-             ("≥10% 중앙 리드타임 (+=고점 전; 탐색 창 최대 20일)", *[cell(v, ("headline", "median_lead_10"), "days") for v in vs]),
-             ("≥10% 중앙 리드타임 · 새로 켜진 경고만 / 무작위 이동", *[pair(v, ("headline", "median_lead_10_fresh"), ("headline", "null_median_lead_10"), "days") for v in vs]),
-             ("≥5% 에피소드 탐지 (탐지/평가가능)",
+             (("10% 사건 경고 비율 · 날짜를 아무렇게나 밀었을 때",
+               "share of 10%+ declines flagged · baseline that shifts the dates at random"),
+              *[cell(v, ("headline", "null_detection_rate_10"), "pct") for v in vs]),
+             (("10% 사건: 고점 며칠 전에 경고했나 (가운데 값, 20일까지만 찾음)",
+               "10%+ declines: days of warning before the peak (median; only 20 days are searched)"),
+              *[cell(v, ("headline", "median_lead_10"), "days") for v in vs]),
+             (("10% 사건: 새로 켜진 경고만 / 날짜를 밀었을 때",
+               "10%+ declines: only freshly-lit warnings / dates shifted at random"),
+              *[pair(v, ("headline", "median_lead_10_fresh"), ("headline", "null_median_lead_10"), "days") for v in vs]),
+             (("5% 넘게 떨어진 사건을 미리 경고했나 (경고 / 평가 가능)",
+               "declines of 5% or more flagged in advance (flagged / assessable)"),
               *[f"{cell(v, ('headline', 'n_detected_5'), 'int')}/{cell(v, ('headline', 'n_evaluable_5'), 'int')} ({cell(v, ('headline', 'detection_rate_5'), 'pct')})" for v in vs]),
-             ("≥5% 탐지율 · 무작위 순환 이동 기준선", *[cell(v, ("headline", "null_detection_rate_5"), "pct") for v in vs]),
-             ("≥5% 중앙 리드타임", *[cell(v, ("headline", "median_lead_5"), "days") for v in vs]),
-             ("≥5% 중앙 리드타임 · 새로 켜진 경고만 / 무작위 이동", *[pair(v, ("headline", "median_lead_5_fresh"), ("headline", "null_median_lead_5"), "days") for v in vs]),
-             ("오경보 / 년 (경고 뒤 20일 내 -5% 없음)", *[cell(v, ("headline", "false_alarms_per_year"), "num") for v in vs]),
-             ("오경보율 / 임의의 날 기준선", *[pair(v, ("headline", "false_alarm_rate"), ("headline", "false_alarm_rate_baseline"), "pct") for v in vs]),
-             ("진짜 경보 비중 / -5%·20일 기저율", *[pair(v, ("headline", "true_alarm_share"), ("headline", "true_alarm_share_baseline"), "pct") for v in vs]),
-             ("톤 전환 / 년", *[cell(v, ("headline", "tone_switches_per_year"), "num") for v in vs]),
-             ("배분 CAGR / 보유 CAGR", *[pair(v, ("headline", "cagr_strategy"), ("headline", "cagr_bh"), "pct") for v in vs]),
-             ("배분 MaxDD / 보유 MaxDD", *[pair(v, ("headline", "maxdd_strategy"), ("headline", "maxdd_bh"), "pct") for v in vs]),
-             ("MaxDD 개선 (배분-보유, 양수=개선)", *[cell(v, ("allocation", "maxdd_improvement"), "pct") for v in vs]),
-             ("배분 최악 월 / 보유 최악 월", *[pair(v, ("headline", "worst_month_strategy"), ("headline", "worst_month_bh"), "pct") for v in vs])]
+             (("5% 사건 경고 비율 · 날짜를 아무렇게나 밀었을 때",
+               "share of 5%+ declines flagged · baseline that shifts the dates at random"),
+              *[cell(v, ("headline", "null_detection_rate_5"), "pct") for v in vs]),
+             (("5% 사건: 고점 며칠 전에 경고했나 (가운데 값)",
+               "5%+ declines: days of warning before the peak (median)"),
+              *[cell(v, ("headline", "median_lead_5"), "days") for v in vs]),
+             (("5% 사건: 새로 켜진 경고만 / 날짜를 밀었을 때",
+               "5%+ declines: only freshly-lit warnings / dates shifted at random"),
+              *[pair(v, ("headline", "median_lead_5_fresh"), ("headline", "null_median_lead_5"), "days") for v in vs]),
+             (("헛경보 횟수 / 1년 (경고했지만 20일 안에 5% 하락이 없던 경우)",
+               "false alarms per year (warned, but no 5% drop within 20 days)"),
+              *[cell(v, ("headline", "false_alarms_per_year"), "num") for v in vs]),
+             (("헛경보 비율 / 아무 날이나 경고라고 했을 때",
+               "false-alarm rate / if any random day were called a warning"),
+              *[pair(v, ("headline", "false_alarm_rate"), ("headline", "false_alarm_rate_baseline"), "pct") for v in vs]),
+             (("진짜 경보 비율 / 평소 비율 (20일 안에 5% 하락)",
+               "share of real alarms / the normal rate (a 5% drop within 20 days)"),
+              *[pair(v, ("headline", "true_alarm_share"), ("headline", "true_alarm_share_baseline"), "pct") for v in vs]),
+             (("신호등 판정이 바뀐 횟수 / 1년", "traffic-light call changes per year"),
+              *[cell(v, ("headline", "tone_switches_per_year"), "num") for v in vs]),
+             (("연평균 수익률: 판정대로 조절 / 그냥 계속 보유",
+               "annual return: following the calls / just holding"),
+              *[pair(v, ("headline", "cagr_strategy"), ("headline", "cagr_bh"), "pct") for v in vs]),
+             (("고점 대비 가장 큰 하락: 판정대로 조절 / 그냥 보유",
+               "biggest drop from the peak: following the calls / just holding"),
+              *[pair(v, ("headline", "maxdd_strategy"), ("headline", "maxdd_bh"), "pct") for v in vs]),
+             (("고점 대비 하락이 줄어든 정도 (양수면 좋아진 것)",
+               "how much the biggest drop shrank (positive = better)"),
+              *[cell(v, ("allocation", "maxdd_improvement"), "pct") for v in vs]),
+             (("가장 나빴던 한 달: 판정대로 조절 / 그냥 보유",
+               "worst single month: following the calls / just holding"),
+              *[pair(v, ("headline", "worst_month_strategy"), ("headline", "worst_month_bh"), "pct") for v in vs])]
     for t in TONES:
-        rows.append((f"톤 비중 · {RPT.TONE_KO.get(t, t)}({t})", *[cell(v, ("meta", "tone_share", t), "pct") for v in vs]))
+        rows.append(((f"신호등이 {RPT.TONE_KO.get(t, t)}({t})였던 날의 비율", f"share of days the light was {t}"),
+                     *[cell(v, ("meta", "tone_share", t), "pct") for v in vs]))
     return rows
 
 
 def _agreement_section(res: dict) -> str:
-    """두 변형의 톤·상태 일치율과 5×5 톤 혼동표 — 부분 봉 문제의 크기."""
+    """두 계산 방식의 판정 일치율과 5×5 맞섞임표 — 안 끝난 봉을 넣고 빼는 차이의 크기."""
     vs = list(res)
     if len(vs) < 2:
         return ""
     a, b = res[vs[0]]["replay"], res[vs[1]]["replay"]
     common = a.index.intersection(b.index)
     if len(common) == 0:
-        return '<section class="panel"><h2>② 두 변형의 일치도</h2><div class="note">공통 거래일 없음</div></section>'
+        return ('<section class="panel">' + _bi_h2("②", "두 계산 방식이 얼마나 같은가", "How much the two ways of computing agree")
+                + f'<div class="note">{bi("겹치는 거래일이 없습니다", "no trading days in common")}</div></section>')
     ta, tb = a.loc[common, "tone"].astype(str), b.loc[common, "tone"].astype(str)
-    rows = [("톤(tone)", _fmt(float((ta == tb).mean()), "pct"))]
-    for col, ko in (("overall_d", "일간 종합"), ("overall_w", "주간 종합"), ("overall_m", "월간 종합")):
-        rows.append((ko, _fmt(float((a.loc[common, col] == b.loc[common, col]).mean()), "pct")))
+    rows = [(("신호등 판정", "traffic-light call"), _fmt(float((ta == tb).mean()), "pct"))]
+    for col, ko, en in (("overall_d", "하루 단위 종합", "daily overall"),
+                        ("overall_w", "한 주 단위 종합", "weekly overall"),
+                        ("overall_m", "한 달 단위 종합", "monthly overall")):
+        rows.append(((ko, en), _fmt(float((a.loc[common, col] == b.loc[common, col]).mean()), "pct")))
     for k in ("state_fang", "state_macd", "state_vix", "state_btc"):
-        rows.append((RPT.SIGNAL_KO.get(k[6:], k) + " (일간)", _fmt(float((a.loc[common, k] == b.loc[common, k]).mean()), "pct")))
-    agree = _table(["항목", "일치율"], [[RPT._esc(k), v] for k, v in rows])
+        ko, en = _SIGNAL_BI.get(k[6:], (RPT.SIGNAL_KO.get(k[6:], k), k[6:]))
+        rows.append(((ko + " (하루 단위)", en + " (daily)"),
+                     _fmt(float((a.loc[common, k] == b.loc[common, k]).mean()), "pct")))
+    agree = _table([("항목", "item"), ("두 방식이 같았던 날의 비율", "share of days the two agree")],
+                   [[bi(k[0], k[1]), v] for k, v in rows])
     conf = pd.crosstab(ta, tb).reindex(index=list(TONES), columns=list(TONES), fill_value=0)
-    conf_rows = [[RPT._tone_pill(t)] + [f"{int(conf.loc[t, u]):,}" for u in TONES] for t in TONES]
-    conf_html = _table([f"{vs[0]} ↓ / {vs[1]} →"] + [RPT.TONE_KO.get(u, u) for u in TONES], conf_rows)
+    conf_rows = [[RPT._tone_pill(t, bi_gloss=False)] + [f"{int(conf.loc[t, u]):,}" for u in TONES] for t in TONES]
+    conf_html = _table([(f"{vs[0]} ↓ / {vs[1]} →", f"{vs[0]} ↓ / {vs[1]} →")]
+                       + [(RPT.TONE_KO.get(u, u), u) for u in TONES], conf_rows)
     n_diff = int((ta != tb).sum())
-    # 다른 날의 예 (최근 10개)
     diff_days = common[(ta != tb).to_numpy()]
     ex = ", ".join(f"{d:%Y-%m-%d} {ta[d]}→{tb[d]}" for d in diff_days[-10:])
-    return ('<section class="panel" id="c2"><h2>② 두 변형의 일치도 — 부분 봉 문제의 크기</h2>'
-            f'<div class="note">공통 거래일 {len(common):,}일 중 톤이 다른 날 {n_diff:,}일. faithful 은 라이브처럼 부분 주/월을 포함하고 '
-            'completed 는 완성 봉만 쓰므로, 일간 상태(일봉은 두 변형 모두 asof 종가를 완성으로 간주)는 같고 주간·월간 종합이 달라진다.</div>'
-            f'<div class="two"><div>{agree}</div><div><h3>톤 혼동표 (행 {RPT._esc(vs[0])}, 열 {RPT._esc(vs[1])})</h3>{conf_html}</div></div>'
-            + (f'<div class="note">최근 다른 날 예: {RPT._esc(ex)}</div>' if ex else "") + "</section>")
+    return ('<section class="panel" id="c2">'
+            + _bi_h2("②", "두 계산 방식이 얼마나 같은가", "How much the two ways of computing agree")
+            + '<div class="note">'
+            + bi_html(f"겹치는 거래일 {len(common):,}일 가운데 신호등 판정이 달랐던 날은 {n_diff:,}일입니다. "
+                      "faithful 은 실제 화면처럼 아직 안 끝난 주·달을 넣고, completed 는 끝난 것만 씁니다. "
+                      "하루 단위 판정은 두 방식이 같고(그날 종가는 둘 다 끝난 것으로 봅니다), 주·달 단위 종합에서 갈립니다.",
+                      f"Of the {len(common):,} trading days they share, the traffic-light call differs on {n_diff:,}. "
+                      "faithful includes the unfinished week and month exactly as the live screen does; completed uses "
+                      "only finished bars. The daily calls agree (both treat that day's close as finished); the weekly "
+                      "and monthly summaries are where they part.")
+            + "</div>"
+            + f'<div class="two"><div>{agree}</div><div>'
+            + _bi_h3(f"판정이 어떻게 엇갈렸나 (세로 {vs[0]}, 가로 {vs[1]})",
+                     f"where the calls disagree (rows {vs[0]}, columns {vs[1]})")
+            + f'{conf_html}</div></div>'
+            + (f'<div class="note">{bi("최근에 달랐던 날들", "the most recent days they differed")}: {RPT._esc(ex)}</div>' if ex else "")
+            + "</section>")
 
 
 def _scorecard_side_by_side(res: dict, h: int) -> str:
     vs = list(res)
-    headers = ["톤"] + [f"{v} 적중" for v in vs] + [f"{v} 기준선" for v in vs] + [f"{v} 95% 구간" for v in vs] + [f"{v} 독립 창" for v in vs]
+    headers = [("신호등 판정", "traffic-light call")]
+    headers += [(f"{v} 적중률", f"{v} hit rate") for v in vs]
+    headers += [(f"{v} 무조건 오른다고 할 때", f"{v} always saying up") for v in vs]
+    headers += [(f"{v} 95% 범위", f"{v} 95% range") for v in vs]
+    headers += [(f"{v} 겹치지 않는 창 수", f"{v} non-overlapping windows") for v in vs]
     rows = []
     for t in list(TONES) + ["all"]:
         cells = {v: next((r for r in res[v]["summary"].get("scorecard", []) if r.get("tone") == t and r.get("h") == h), {}) for v in vs}
-        row = [RPT._tone_pill(t) if t in TONES else "전체"]
+        row = [RPT._tone_pill(t, bi_gloss=False) if t in TONES else bi("전체", "all")]
         row += [_fmt(cells[v].get("hit"), "pct") for v in vs]
         row += [_fmt(cells[v].get("baseline"), "pct") for v in vs]
         row += [f"[{_fmt(cells[v].get('hit_ci_lo'), 'pct')}, {_fmt(cells[v].get('hit_ci_hi'), 'pct')}]" for v in vs]
@@ -492,61 +583,134 @@ def _episodes_side_by_side(res: dict, key: str) -> str:
     tabs = {v: res[v]["summary"].get("episodes", {}).get(key, {}).get("table", []) for v in vs}
     base = tabs[vs[0]]
     if not base:
-        return '<div class="note">에피소드 없음</div>'
-    headers = ["고점일", "저점일", "낙폭", "고점→저점(일)"] + [f"{v} 첫 경고일" for v in vs] + [f"{v} 리드(일)" for v in vs] + [f"{v} 놓침" for v in vs]
+        return f'<div class="note">{bi("해당하는 하락 사건이 없습니다", "no decline episodes of this size")}</div>'
+    headers = [("고점 날짜", "peak date"), ("바닥 날짜", "trough date"),
+               ("고점 대비 하락폭", "drop from the peak"), ("고점에서 바닥까지(일)", "days from peak to trough")]
+    headers += [(f"{v} 첫 경고 날짜", f"{v} first warning") for v in vs]
+    headers += [(f"{v} 며칠 전에 경고", f"{v} days of warning") for v in vs]
+    headers += [(f"{v} 놓쳤나", f"{v} missed") for v in vs]
     rows = []
     for i, e in enumerate(base):
-        row = [RPT._esc(str(e.get("peak_date"))), RPT._esc(str(e.get("trough_date"))), _fmt(e.get("depth"), "pct"), _fmt(e.get("days_to_trough"), "int")]
+        row = [RPT._esc(str(e.get("peak_date"))), RPT._esc(str(e.get("trough_date"))),
+               _fmt(e.get("depth"), "pct"), _fmt(e.get("days_to_trough"), "int")]
         others = {v: (tabs[v][i] if i < len(tabs[v]) else {}) for v in vs}
         row += [RPT._esc(str(others[v].get("warn_date") or "—")) if others[v].get("evaluable") else "—" for v in vs]
         row += [_fmt(others[v].get("lead_days"), "days") if others[v].get("evaluable") else "—" for v in vs]
-        row += [("예" if others[v].get("missed") else "아니오") if others[v].get("evaluable") else "—" for v in vs]
+        row += [(bi("놓침", "missed") if others[v].get("missed") else bi("경고함", "warned")) if others[v].get("evaluable") else "—" for v in vs]
         rows.append(row)
     return _table(headers, rows)
 
 
 def render_comparison(res: dict, out_html: Path, start: str, end: str, generated_at: str) -> None:
-    """두 변형을 나란히 보여주는 단일 페이지."""
+    """두 계산 방식을 나란히 보여주는 단일 페이지 (한/영 두 벌 · 쉬운 한국어)."""
     vs = list(res)
-    tags = "".join(f'<span class="tag">변형 <b>{RPT._esc(v)}</b> {RPT._esc(str(res[v]["summary"]["run"].get("n_days")))}일 · '
-                   f'{RPT._esc(str(res[v]["summary"]["run"].get("replay_runtime_sec")))}s</span>' for v in vs)
-    head = ('<header><div class="eyebrow">market-risk-lab · Phase 1 · 실험 #0 · v0 동결 벤치마크</div>'
-            '<h1>v0 규칙 백테스트 — faithful vs completed</h1>'
-            '<div class="sub">같은 v0 규칙을 두 가지로 재현한 결과를 나란히 둡니다. faithful = 라이브와 동일(부분 주/월 포함), '
-            'completed = 완성 봉만. 두 결과의 차이 자체가 부분 봉 문제의 크기입니다 (VALIDATION.md §4).</div>'
-            f'<div class="tags"><span class="tag">구간 <b>{RPT._esc(start)} ~ {RPT._esc(end)}</b></span>{tags}'
-            f'<span class="tag">생성 <b>{RPT._esc(generated_at)}</b></span></div></header>')
-    nav = ('<nav class="nav"><a href="#c1">① 헤드라인</a><a href="#c2">② 일치도</a><a href="#c3">③ 차트</a>'
-           '<a href="#c4">④ 방향 성적표</a><a href="#c5">⑤ 에피소드</a><a href="#c6">⑥ 전체 리포트·규약</a></nav>')
-    s1 = ('<section class="panel" id="c1"><h2>① 헤드라인 — 나란히</h2>'
-          '<div class="note">방향 적중률은 항상-상승 기준선 옆의 참고값입니다. 주 목표는 다음 한 달의 위험(-5%/20일 낙폭)입니다.</div>'
-          + _table(["지표"] + vs, [[RPT._esc(r[0])] + list(r[1:]) for r in _headline_rows(res)])
-          + '<div class="quote"><b>' + RPT._esc(RPT.HONESTY_TITLE) + "</b><ul>"
-          + "".join(f"<li>{RPT._esc(b)}</li>" for b in RPT.HONESTY_BULLETS) + f"<li><b>{RPT._esc(RPT.HONESTY_BOLD)}</b></li></ul></div></section>")
+    tags = "".join('<span class="tag">'
+                   + bi_html(f"계산 방식 <b>{RPT._esc(v)}</b> · {RPT._esc(str(res[v]['summary']['run'].get('n_days')))}일 · "
+                             f"{RPT._esc(str(res[v]['summary']['run'].get('replay_runtime_sec')))}초",
+                             f"variant <b>{RPT._esc(v)}</b> · {RPT._esc(str(res[v]['summary']['run'].get('n_days')))} days · "
+                             f"{RPT._esc(str(res[v]['summary']['run'].get('replay_runtime_sec')))}s")
+                   + "</span>" for v in vs)
+    head = ('<header><div class="eyebrow">market-risk-lab · Phase 1 · '
+            + bi("실험 #0 · v0 규칙 고정 기준", "experiment #0 · the frozen v0 rules as a benchmark") + "</div>"
+            + "<h1>" + bi("v0 규칙 백테스트 — 두 가지 계산 방식 비교",
+                          "v0 rule backtest — comparing the two ways of computing") + "</h1>"
+            + '<div class="sub">'
+            + bi("같은 v0 규칙을 두 가지 방식으로 다시 계산해 나란히 놓았습니다. faithful 은 실제 화면과 똑같이 아직 안 끝난 "
+                 "주·달까지 넣고, completed 는 끝난 것만 씁니다. 두 결과의 차이가 곧 \"안 끝난 봉\" 때문에 생기는 오차의 크기입니다.",
+                 "The same v0 rules, recomputed two ways and placed side by side. faithful includes the unfinished week "
+                 "and month exactly as the live screen does; completed uses only finished bars. The gap between them is "
+                 "the size of the error caused by unfinished bars.")
+            + "</div>"
+            + f'<div class="tags"><span class="tag">{bi("구간", "period")} <b>{RPT._esc(start)} ~ {RPT._esc(end)}</b></span>{tags}'
+            + f'<span class="tag">{bi("만든 시각", "generated")} <b>{RPT._esc(generated_at)}</b></span></div></header>')
+    nav = ('<nav class="nav">'
+           f'<a href="#c1">① {bi("한눈에", "at a glance")}</a>'
+           f'<a href="#c2">② {bi("두 방식의 일치도", "how much they agree")}</a>'
+           f'<a href="#c3">③ {bi("그림", "charts")}</a>'
+           f'<a href="#c4">④ {bi("방향 성적표", "direction scorecard")}</a>'
+           f'<a href="#c5">⑤ {bi("하락 사건", "decline episodes")}</a>'
+           f'<a href="#c6">⑥ {bi("전체 리포트·규약", "full reports and rules")}</a></nav>')
+    honesty_src = RPT._esc(RPT.HONESTY_TITLE + " — " + " ".join(RPT.HONESTY_BULLETS) + " " + RPT.HONESTY_BOLD)
+    s1 = ('<section class="panel" id="c1">' + _bi_h2("①", "한눈에 — 나란히 보기", "At a glance — side by side")
+          + '<div class="note">'
+          + bi("오를지 내릴지 맞히는 비율은 \"무조건 오른다\"고 했을 때 옆에 두고 봐야 합니다. "
+               "이 플랫폼이 정말 노리는 것은 다음 한 달 안에 5% 넘게 떨어질 위험입니다.",
+               "Read the direction hit rate next to what you would get by always saying \"up\". What this platform is "
+               "really aiming at is the risk of a fall of 5% or more over the next month.")
+          + "</div>"
+          + _table([("지표", "measure")] + vs, [[bi(r[0][0], r[0][1])] + list(r[1:]) for r in _headline_rows(res)])
+          + f'<div class="quote" title="{honesty_src}"><b>'
+          + bi(RPT.HONESTY_TITLE,
+               "0. Honest premises (measured on SPY, 1993-01-29 to 2026-09-04, 8,458 trading days)")
+          + "</b><ul>"
+          + "".join(f"<li>{bi(ko, en)}</li>" for ko, en in _HONESTY_PLAIN)
+          + "<li><b>"
+          + bi(RPT.HONESTY_BOLD,
+               'So the main target of this platform is "the risk over the next month", and direction hit rates are '
+               "reported only as a reference, always next to the baseline.")
+          + "</b></li></ul></div>"
+          + _bi_note("위 문단은 VALIDATION.md §0 에 미리 적어 둔 글을 쉬운 말로 옮긴 것입니다. 숫자와 조건은 하나도 바꾸지 "
+                     "않았습니다(원문은 문단에 마우스를 올리면 그대로 보입니다).",
+                     "The paragraph above is the pre-registered text of VALIDATION.md §0 put into plain words. Not one "
+                     "number or condition was changed (hover the paragraph to see the original).")
+          + "</section>")
     s2 = _agreement_section(res)
     charts_html = ""
     for name in CHART_NAMES:
-        cols = "".join(f'<div><h3>{RPT._esc(v)}</h3>{RPT._img(res[v]["charts"].get(name), CHART_CAPTIONS[name], f"{name} {v}")}</div>' for v in vs)
+        cols = "".join("<div>" + _bi_h3(*_variant_bi(v)) + _bi_img(res[v]["charts"].get(name), *CHART_CAPTIONS_BI[name], f"{name} {v}")
+                       + "</div>" for v in vs)
         charts_html += f'<div class="two">{cols}</div>'
-    s3 = f'<section class="panel" id="c3"><h2>③ 차트 — 왼쪽 {RPT._esc(vs[0])}, 오른쪽 {RPT._esc(vs[-1])}</h2>{charts_html}</section>'
-    s4 = ('<section class="panel" id="c4"><h2>④ 방향 성적표 — 항상-상승 기준선 옆에</h2>'
-          '<div class="note">buy/hold/neutral = 상승 예측, caution/reduce = 하락 예측. 95% 구간 = 블록 부트스트랩(블록 = 지평). 독립 창 = 겹치지 않는 앞창 수.</div>'
-          "<h3>20거래일</h3>" + _scorecard_side_by_side(res, 20) + "<h3>60거래일</h3>" + _scorecard_side_by_side(res, 60) + "</section>")
-    s5 = ('<section class="panel" id="c5"><h2>⑤ 에피소드 — 첫 경고일·리드타임·놓침</h2>'
-          '<div class="note">리드타임 양수 = 고점 전 경고. 재현 구간 밖 에피소드는 "—". 경고 탐색 창 = 고점 20거래일 전 ~ 저점 — '
-          '리드타임은 20일을 넘지 못하며(상한에 걸린 경고는 lead_capped), 탐지율·리드는 ① 의 무작위 이동 기준선과 나란히 읽는다.</div>'
-          "<h3>≥10% 낙폭</h3>" + _episodes_side_by_side(res, "10") + "<h3>≥20% 낙폭</h3>" + _episodes_side_by_side(res, "20")
-          + "<h3>≥5% 낙폭</h3>" + _episodes_side_by_side(res, "5") + "</section>")
-    links = "".join(f'<li><a href="backtest_v0_{RPT._esc(v)}.html">{RPT._esc(VARIANT_LABEL(v))} — 전체 리포트 ①~⑨</a></li>' for v in vs)
+    s3 = ('<section class="panel" id="c3">'
+          + _bi_h2("③", f"그림 — 왼쪽 {vs[0]}, 오른쪽 {vs[-1]}", f"Charts — {vs[0]} on the left, {vs[-1]} on the right")
+          + f"{charts_html}</section>")
+    s4 = ('<section class="panel" id="c4">'
+          + _bi_h2("④", "방향 성적표 — \"무조건 오른다\" 옆에 두고", "Direction scorecard — next to always saying \"up\"")
+          + '<div class="note">'
+          + bi("매수·보유·관망은 오른다는 쪽, 주의·축소는 내린다는 쪽으로 봅니다. 95% 범위는 구간을 여러 조각으로 잘라 "
+               "다시 계산해 얻은 범위이고, 겹치지 않는 창 수가 적을수록 이 범위는 넓어집니다 — 표본이 적으면 숫자를 믿기 어렵습니다.",
+               "buy, hold and neutral count as saying up; caution and reduce as saying down. The 95% range comes from "
+               "recomputing on resampled chunks of the period, and the fewer non-overlapping windows there are, the "
+               "wider it gets — with a small sample the number is not to be trusted.")
+          + "</div>"
+          + _bi_h3("20거래일 뒤", "20 trading days ahead") + _scorecard_side_by_side(res, 20)
+          + _bi_h3("60거래일 뒤", "60 trading days ahead") + _scorecard_side_by_side(res, 60) + "</section>")
+    s5 = ('<section class="panel" id="c5">'
+          + _bi_h2("⑤", "하락 사건 — 언제 처음 경고했나", "Decline episodes — when the first warning came")
+          + '<div class="note">'
+          + bi("\"며칠 전에 경고\"가 양수면 고점보다 먼저 경고했다는 뜻입니다. 계산 구간 밖의 사건은 \"—\" 로 둡니다. "
+               "경고는 고점 20거래일 전부터 바닥까지만 찾으므로 이 값은 20일을 넘을 수 없고, 위 ① 의 "
+               "\"날짜를 아무렇게나 밀었을 때\" 와 반드시 나란히 읽어야 합니다.",
+               "A positive \"days of warning\" means the warning came before the peak. Episodes outside the computed "
+               "period are left as \"—\". Warnings are only searched from 20 trading days before the peak to the trough, "
+               "so the value can never exceed 20 days, and it must be read next to the \"dates shifted at random\" "
+               "baseline in section ① above.")
+          + "</div>"
+          + _bi_h3("10% 넘게 떨어진 사건", "declines of 10% or more") + _episodes_side_by_side(res, "10")
+          + _bi_h3("20% 넘게 떨어진 사건", "declines of 20% or more") + _episodes_side_by_side(res, "20")
+          + _bi_h3("5% 넘게 떨어진 사건", "declines of 5% or more") + _episodes_side_by_side(res, "5") + "</section>")
+    links = "".join(f'<li><a href="backtest_v0_{RPT._esc(v)}.html">' + bi(*_variant_bi(v))
+                    + " — " + bi("전체 리포트 ①~⑨", "full report, sections ①-⑨") + "</a></li>" for v in vs)
     warns = []
     for v in vs:
         warns += [f"[{v}] {w}" for w in res[v]["report_summary"].get("warnings", [])]
-    s6 = ('<section class="panel" id="c6"><h2>⑥ 전체 리포트 · 대체 규약 · 경고</h2><ul class="plain">' + links + "</ul>"
-          '<h3>대체 규약 (VALIDATION.md §3)</h3><ul class="plain">' + "".join(f"<li>{RPT._esc(t)}</li>" for t in RPT.SUBSTITUTION_RULES) + "</ul>"
-          + f'<div class="note">{RPT._esc(res[vs[0]]["report_summary"].get("honesty", ""))}</div>'
-          "<h3>경고</h3>" + RPT._warn_list(warns)
-          + f'<div class="foot">market-risk-lab · 생성 {RPT._esc(generated_at)} · <a href="index.html">오늘 판정으로</a></div></section>')
-    RPT._write_html(out_html, "v0 백테스트 (faithful vs completed) — market-risk-lab", head + nav + s1 + s2 + s3 + s4 + s5 + s6)
+    s6 = ('<section class="panel" id="c6">'
+          + _bi_h2("⑥", "전체 리포트 · 빠진 자료를 다루는 규칙 · 경고",
+                   "Full reports · what we do when data is missing · warnings")
+          + '<ul class="plain">' + links + "</ul>"
+          + _bi_h3("빠진 자료를 다루는 규칙 (VALIDATION.md §3)", "What we do when data is missing (VALIDATION.md §3)")
+          + '<ul class="plain">'
+          + "".join(f"<li>{bi(t, _substitution_en(i))}</li>" for i, t in enumerate(RPT.SUBSTITUTION_RULES)) + "</ul>"
+          + (_bi_note("하락 사건을 세는 규칙은 계산 과정이 남긴 기록이라 한국어 원문 그대로 둡니다.",
+                      "The rule for counting decline episodes is written by the pipeline and is kept in "
+                      "the original Korean.")
+             + f'<div class="note"><span class="raw mono">'
+               f'{RPT._esc(res[vs[0]]["report_summary"].get("honesty", ""))}</span></div>'
+             if res[vs[0]]["report_summary"].get("honesty") else "")
+          + _bi_h3("경고", "Warnings") + _bi_warns(warns)
+          + '<div class="foot">market-risk-lab · ' + bi("만든 시각", "generated") + f" {RPT._esc(generated_at)} · "
+          + f'<a href="index.html">{bi("오늘 판정 보러 가기", "go to today\'s call")}</a></div></section>')
+    RPT._write_html(out_html, "v0 backtest (faithful vs completed) — market-risk-lab",
+                    head + nav + s1 + s2 + s3 + s4 + s5 + s6)
 
 
 def VARIANT_LABEL(v: str) -> str:

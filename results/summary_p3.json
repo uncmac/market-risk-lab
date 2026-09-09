@@ -2,7 +2,7 @@
  "schema_version": 1,
  "disclosure": "#2 사전 관측 + 설계 단계 비중 관측 참조",
  "run": {
-  "generated_at_utc": "2026-09-08T18:12:55Z",
+  "generated_at_utc": "2026-09-09T00:50:29Z",
   "end": "2024-08-30",
   "start": "1993-01-29",
   "n_sessions": 7954,
@@ -44,7 +44,7 @@
    "spy_last": "2026-09-08",
    "spy_last_used": "2024-08-30"
   },
-  "runtime_sec": 22.2
+  "runtime_sec": 18.0
  },
  "params": {
   "production_K_s": 4,
@@ -82,42 +82,42 @@
   "baseline_20": 0.6875857338820301,
   "detection_rate_10": 1.0,
   "median_lead_10": 20.0,
-  "cagr_strategy": 0.09904631381052975,
-  "cagr_bh": 0.13869047694477765,
-  "maxdd_strategy": -0.16055571788846335,
-  "maxdd_bh": -0.3371727431876228,
-  "worst_month_strategy": -0.07731616062832725,
-  "worst_month_bh": -0.12487139588010565,
+  "cagr_strategy": 0.09904659884795564,
+  "cagr_bh": 0.1386904677261258,
+  "maxdd_strategy": -0.16055551183718564,
+  "maxdd_bh": -0.3371728563018299,
+  "worst_month_strategy": -0.07731598721955069,
+  "worst_month_bh": -0.12487123987381687,
   "brier_climatology_dd5": 0.12547524090162407,
   "base_rate_dd5": 0.147119341563786,
   "signals_v0_sha256": "d4927bf98b9264bf56c716b2d1e33dfea2309d4d3a4fef3c9aac80c9f935c5f4",
   "window_rule": "calendar|spy=2y,vix=2y,fang=2y,watch=1y,btc=2y|spy,vix,fang,watch:(asof-span,asof]|btc:[last_bar-span,last_bar]",
-  "generated_at_utc": "2026-09-08T16:10:49Z",
+  "generated_at_utc": "2026-09-09T00:43:07Z",
   "allocation": {
    "start": "2015-01-02",
    "end": "2026-09-04",
    "n_days": 2935,
    "years": 11.646825396825397,
-   "cagr": 0.09904631381052975,
-   "max_dd": -0.16055571788846335,
+   "cagr": 0.09904659884795564,
+   "max_dd": -0.16055551183718564,
    "max_dd_date": "2022-06-16",
-   "worst_month": -0.07731616062832725,
+   "worst_month": -0.07731598721955069,
    "worst_month_label": "2018-12",
-   "total_return": 2.00404283021418,
-   "ann_vol": 0.10997579597651076,
+   "total_return": 2.004051904243499,
+   "ann_vol": 0.10997574528767025,
    "n_switches": 667,
    "switches_per_year": 57.26882453151618,
    "avg_exposure": 0.702725724020443,
    "cost_total": 0.181375,
-   "bh_cagr": 0.13869047694477765,
-   "bh_max_dd": -0.3371727431876228,
+   "bh_cagr": 0.1386904677261258,
+   "bh_max_dd": -0.3371728563018299,
    "bh_max_dd_date": "2020-03-23",
-   "bh_worst_month": -0.12487139588010565,
+   "bh_worst_month": -0.12487123987381687,
    "bh_worst_month_label": "2020-03",
-   "bh_total_return": 3.5388643804841324,
-   "bh_ann_vol": 0.17566401765635875,
-   "excess_cagr": -0.0396441631342479,
-   "maxdd_improvement": 0.17661702529915946,
+   "bh_total_return": 3.5388639525110213,
+   "bh_ann_vol": 0.17566406432805587,
+   "excess_cagr": -0.039643868878170174,
+   "maxdd_improvement": 0.17661734446464428,
    "exposure_map": {
     "buy": 1.0,
     "hold": 1.0,
@@ -6306,7 +6306,7 @@
   "registry_sha": "5aef315bc003447f6d6aeb0d9853c6a79d36cb3216dcabe2492f2515c0675730",
   "sizing_sha": "c5d35fcc86113005699e56e64cf357947a08a7600f5b5d0154cd27c6b1406329",
   "registry_tuple_sha": "05c99a91952b384e3ac6c1addb50e858139dbd1d973c21ccbbd6641851731312",
-  "determinism": "data_changed"
+  "determinism": "compared"
  },
  "acceptance": {
   "rule": "amended",
@@ -7108,7 +7108,7 @@
  },
  "track": {
   "schema_version": 3,
-  "n_rows": 1,
+  "n_rows": 2,
   "n_scored": 0,
   "n_eff": 0.0,
   "live_start": null,
@@ -7157,7 +7157,7 @@
    "holdout_locked": false,
    "members": {},
    "score": null,
-   "asof": "2026-09-04",
+   "asof": "2026-09-08",
    "rule": "1차 36개월(점추정 ≤ 0 → info_only, sticky) · 2차 = 8회 또는 60개월 중 먼저 · 이후 12개월마다 재평가 · 라벨은 부트스트랩 CI 하한(VALIDATION.md §7 실행 해석, 장부 #7)",
    "rearm": {
     "automatic": false,
@@ -7208,7 +7208,7 @@
   },
   "panel": {
    "stage": "0-3m",
-   "asof": "2026-09-04",
+   "asof": "2026-09-08",
    "live_start": null,
    "i_p_level": {
     "n": 0,
@@ -7451,16 +7451,16 @@
    },
    "notes": [
     "라이브 시작 전: prob_dd5_20 이 있고 p2_deploy_mode == 'tones' 인 행이 없습니다 (Phase 2 info_only 기간·재현 행은 라이브가 아닙니다 — §8.1)",
-    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
-    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+    "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
     "alarms: 채점 가능한 행이 없습니다(홀드아웃 잠금)"
    ]
   },
   "holdout_locked": false,
   "notes": [
    "라이브 시작 전: prob_dd5_20 이 있고 p2_deploy_mode == 'tones' 인 행이 없습니다 (Phase 2 info_only 기간·재현 행은 라이브가 아닙니다 — §8.1)",
-   "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
-   "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+   "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+   "홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
    "alarms: 채점 가능한 행이 없습니다(홀드아웃 잠금)"
   ]
  },
@@ -7493,7 +7493,7 @@
   "holdout_locked": false,
   "members": {},
   "score": null,
-  "asof": "2026-09-04",
+  "asof": "2026-09-08",
   "rule": "1차 36개월(점추정 ≤ 0 → info_only, sticky) · 2차 = 8회 또는 60개월 중 먼저 · 이후 12개월마다 재평가 · 라벨은 부트스트랩 CI 하한(VALIDATION.md §7 실행 해석, 장부 #7)",
   "rearm": {
    "automatic": false,
@@ -8526,7 +8526,7 @@
   "obs_spec": "r100,ln_rv10;rv_window=10;cov=full;K=2;pi=stationary",
   "param_count": 12,
   "timing": {
-   "walk_forward_sec": 3.5,
+   "walk_forward_sec": 2.7,
    "n_refits": 22
   },
   "occupancy": 0.427033335983098,
@@ -12454,17 +12454,17 @@
  },
  "holdout_members": null,
  "determinism": {
-  "status": "data_changed",
+  "status": "compared",
   "ok": true,
-  "theta_max_abs_diff": 4.544631449121539e-05,
-  "platt_max_abs_diff": 1.2845087961954604e-05,
-  "backtest_csv_same": false,
+  "theta_max_abs_diff": 0.0,
+  "platt_max_abs_diff": 0.0,
+  "backtest_csv_same": true,
   "registry_sha_same": true,
   "sizing_sha_same": true,
-  "data_sha_same": false,
+  "data_sha_same": true,
   "spec_changed": false,
   "tol": 1e-07,
-  "note": "입력 지문이 다르다(캐시 재다운로드·배당 재조정) → 결정론 검사가 아니다. θ 이동 4.54e-05 · Platt 이동 1.28e-05 — 장부 검토 대상(§16 10)",
+  "note": "같은 sha·같은 입력 → θ·Platt 1e-7 안, backtest_p3.csv 해시 동일",
   "backtest_csv_columns_same": true,
   "backtest_csv_sens_only_stored": [],
   "backtest_csv_sens_only_new": []
@@ -12475,10 +12475,9 @@
  "warnings": [
   "p2 가 info_only 이므로 유효 모드도 info_only — 카드의 비중·상태 블록은 뜨지 않는다(§15 단계 0). 이 실행의 비중 백테스트·시나리오·게이지는 정보로만 남는다",
   "트랙레코드: 라이브 시작 전: prob_dd5_20 이 있고 p2_deploy_mode == 'tones' 인 행이 없습니다 (Phase 2 info_only 기간·재현 행은 라이브가 아닙니다 — §8.1)",
-  "트랙레코드: 홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
-  "트랙레코드: 홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 1행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+  "트랙레코드: 홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
+  "트랙레코드: 홀드아웃 미해제(holdout_unlock.json 없음) → 2024-09-01 이후 2행은 라이브 채점·킬룰·경보에서 제외 (최종 검증 1회 전 접근 금지 — VALIDATION.md §6)",
   "트랙레코드: alarms: 채점 가능한 행이 없습니다(홀드아웃 잠금)",
-  "입력 지문이 다르다(캐시 재다운로드·배당 재조정) → 결정론 검사가 아니다. θ 이동 4.54e-05 · Platt 이동 1.28e-05 — 장부 검토 대상(§16 10)",
   "블록 표(H): AUC 계산 불가(p_h): 클래스가 하나뿐이거나 표본이 없습니다 (n=380)",
   "블록 표(H): AUC 계산 불가(p_h): 클래스가 하나뿐이거나 표본이 없습니다 (n=378)"
  ],

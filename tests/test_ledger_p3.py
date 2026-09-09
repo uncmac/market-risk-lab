@@ -234,15 +234,20 @@ def test_real_repo_ledger_recorded_under_schema2_still_loads_and_summarizes(tmp_
 
     df = ledger._read(real)                                                            # 제자리 승격(메모리에서만)
     assert list(df.columns)[:len(ledger.LEDGER_COLUMNS)] == list(ledger.LEDGER_COLUMNS)
-    assert df[CONTRACT_P3 + CONTRACT_OUTCOME_P3].isna().all().all()
+    # 승격 **전에** 기록된 행(= p3_run_id 가 비어 있는 행)만 P3 열이 비어 있어야 한다.
+    # 모든 행에 대해 비었는지 보면, daily.py 가 처음 진짜 P3 행을 쓰는 순간 영구히 실패한다
+    # (바로 이 함수 설명이 경고하는 실수다). 승격 뒤 행은 값이 있는 게 정상이다.
+    pre_p3 = df["p3_run_id"].isna() if "p3_run_id" in df.columns else pd.Series(True, index=df.index)
+    assert df.loc[pre_p3, CONTRACT_P3 + CONTRACT_OUTCOME_P3].isna().all().all()
     n = len(df)
+    n_p3 = int((~pre_p3).sum())
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         s = ledger.summary(real)                                                       # 읽기 전용
     assert hashlib.sha256(real.read_bytes()).hexdigest() == sha_before                  # 파일을 다시 쓰지 않았다
     assert s["schema_version"] == 3 and s["n"] == n and s["p2"]["n_rows"] == n
-    assert s["p3"]["n_p3_rows"] == 0
+    assert s["p3"]["n_p3_rows"] == n_p3
     json.dumps(s, ensure_ascii=False, allow_nan=False)
 
     # 복사본에 P3 행을 붙여도 원본 행의 기존 열 텍스트는 바이트 그대로다

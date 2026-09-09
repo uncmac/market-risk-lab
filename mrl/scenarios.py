@@ -797,43 +797,102 @@ def _pick_bin_row(bins_tbl: pd.DataFrame, p_today: float) -> dict | None:
     return bins_tbl.loc[m].iloc[0].to_dict()
 
 
-def _line_market(vix, har_fc, spot, cov: dict, rng_vix: dict, rng_har: dict, notes: list) -> str:
+def _line_market(vix, har_fc, spot, cov: dict, rng_vix: dict, rng_har: dict, notes: list) -> tuple[str, tuple[str, str]]:
+    """카드 1줄: (원문, (쉬운 한국어, English)). 원문은 한 글자도 바꾸지 않는다 — 숫자는 셋 다 같은 값."""
     cv = (cov or {}).get("vix") or {}
     ch = (cov or {}).get("har") or {}
     v = _num(vix)
     head = f"시장이 보는 20일 범위(VIX {v:.1f})" if np.isfinite(v) else "시장이 보는 20일 범위(VIX 미상)"
+    vix_txt = f"VIX {v:.1f}" if np.isfinite(v) else "VIX 미상"
+    vix_txt_en = f"VIX {v:.1f}" if np.isfinite(v) else "VIX not available"
     if not rng_vix.get("ok"):
         notes.append("시장 내재 범위 계산 불가(VIX 또는 종가 결측)")
         left = f"{head}: {MISSING}"
+        left_ko = (f"옵션 시장이 보는 앞으로 20일 범위는 구할 수 없습니다({vix_txt}). "
+                   "VIX 나 종가가 없으면 범위를 지어내지 않습니다.")
+        left_en = ("The 20-day range the options market expects cannot be computed "
+                   f"({vix_txt_en}). Without VIX or a close we do not invent a range.")
     else:
         lab = cv.get("label_80") or range_label(cv.get("hit_80"), cv.get("n_eff"), "80")
         hit = _pct0(cv.get("hit_80"))
         left = (f"{head}: ±{_pct(rng_vix['pct']['80'])} (80%; 과거 {hit} 포함"
                 + (f", {lab}" if lab != MISSING else "") + ")")
+        lab_ko, lab_en = _LABEL_PLAIN.get(lab, ("", ""))
+        left_ko = (f"옵션 시장이 보는 앞으로 20일 범위입니다({vix_txt}). 지금 값에서 위아래 "
+                   f"±{_pct(rng_vix['pct']['80'])} 안에 들어올 가능성을 10번 중 8번(80%)으로 봅니다. "
+                   f"과거에 실제로 그 범위 안에 들어온 날은 {hit} 였습니다"
+                   + (f" — {lab_ko}." if lab_ko else "."))
+        left_en = (f"This is the 20-day range the options market expects ({vix_txt_en}). It puts the chance "
+                   f"of staying within ±{_pct(rng_vix['pct']['80'])} of today's level at 8 times out of 10 "
+                   f"(80%). In the past {hit} of days actually stayed inside that range"
+                   + (f" — {lab_en}." if lab_en else "."))
     if not rng_har.get("ok"):
         notes.append("예상 변동성(HAR) 범위 계산 불가")
         right = f"예상 변동성 기준 {MISSING}"
+        right_ko = "예상 변동성으로 계산한 범위는 구할 수 없습니다."
+        right_en = "The range from the expected swing cannot be computed."
     else:
         right = f"예상 변동성 기준 ±{_pct(rng_har['pct']['80'])} (과거 ~{_pct0(ch.get('hit_80'))})"
-    return left + " · " + right
+        right_ko = (f"예상 변동성으로 계산하면 범위는 ±{_pct(rng_har['pct']['80'])} 이고, 과거에 그 안에 "
+                    f"들어온 날은 약 {_pct0(ch.get('hit_80'))} 였습니다.")
+        right_en = (f"Using the expected swing instead, the range is ±{_pct(rng_har['pct']['80'])}, and in the "
+                    f"past about {_pct0(ch.get('hit_80'))} of days stayed inside it.")
+    return left + " · " + right, (left_ko + " " + right_ko, left_en + " " + right_en)
 
 
-def _line_today(p_today, row: dict | None, base: float, min_n_eff: float, notes: list) -> str:
+# 포함률 라벨(range_label 의 세 값)의 쉬운 말 — 원문 라벨은 그대로 두고 화면 문장에만 쓴다
+_LABEL_PLAIN = {"보수적": ("범위를 넉넉하게 잡은 편입니다", "the range is on the generous side"),
+                "낙관적": ("범위를 좁게 잡은 편입니다", "the range is on the tight side"),
+                "중심": ("대체로 들어맞는 편입니다", "the range is about right")}
+
+
+def _line_today(p_today, row: dict | None, base: float, min_n_eff: float,
+                notes: list) -> tuple[str, tuple[str, str]]:
+    """카드 2줄: (원문, (쉬운 한국어, English)). 표본 수·구간·평소 비율을 어느 쪽에서도 빼지 않는다."""
     if row is None:
         notes.append("오늘 확률에 해당하는 구간 행이 없다(확률 결측 또는 표 없음)")
-        return (f"오늘 같은 날: 구간 표를 쓸 수 없다 — 전체 기저율 {_pct0(base)} "
-                f"(20일 안에 {_MINUS}5%)")
+        raw = (f"오늘 같은 날: 구간 표를 쓸 수 없다 — 전체 기저율 {_pct0(base)} "
+               f"(20일 안에 {_MINUS}5%)")
+        ko = (f"오늘 확률에 해당하는 줄이 표에 없어 오늘만의 숫자는 말하지 않습니다. 대신 평소 비율을 "
+              f"씁니다: 20일 안에 5% 넘게 떨어진 날은 전체의 {_pct0(base)} 였습니다.")
+        en = (f"Today's probability does not land on any row of the table, so we give no number just for "
+              f"today. Here is the normal rate instead: {_pct0(base)} of all days fell more than 5% within "
+              f"20 days.")
+        return raw, (ko, en)
     n_eff = _num(row.get("n_eff"))
     if bool(row.get("grey")) or not (n_eff >= min_n_eff):
         notes.append(f"오늘 구간 n_eff {n_eff:.1f} < {min_n_eff:.0f} — 단독 표시 금지(풀링 규칙)")
-        return (f"오늘 같은 날: 표본이 얇아(독립 창 {n_eff:.0f} < {min_n_eff:.0f}) 이 구간만으로는 말하지 않는다 — "
-                f"전체 기저율 {_pct0(base)}")
+        raw = (f"오늘 같은 날: 표본이 얇아(독립 창 {n_eff:.0f} < {min_n_eff:.0f}) 이 구간만으로는 말하지 않는다 — "
+               f"전체 기저율 {_pct0(base)}")
+        ko = (f"오늘 확률대는 표본이 얇습니다. 서로 겹치지 않는 창이 {n_eff:.0f}개뿐이라 기준인 "
+              f"{min_n_eff:.0f}개에 못 미칩니다. 그래서 이 구간만으로는 말하지 않고 평소 비율을 씁니다: "
+              f"{_pct0(base)}.")
+        en = (f"The probability band for today has a thin sample: only {n_eff:.0f} non-overlapping windows, "
+              f"below the {min_n_eff:.0f} we require. So we do not speak from that band alone and use the "
+              f"normal rate instead: {_pct0(base)}.")
+        return raw, (ko, en)
     obs = _num(row.get("obs"))
     k = obs * n_eff
-    return (f"오늘 같은 날(확률대 {_span(row.get('bin_lo'), row.get('bin_hi'))}): "
-            f"과거 독립 {n_eff:.0f}창 중 {k:.0f}창({_span(row.get('wilson_lo'), row.get('wilson_hi'))})이 "
-            f"20일 안에 {_MINUS}5%; 그때 20일 수익 10~90%: {_pct(row.get('ret_p10'), signed=True)}~"
-            f"{_pct(row.get('ret_p90'), signed=True)}, 최대낙폭 나쁜 10% {_pct(row.get('mdd_p10'), signed=True)}")
+    span = _span(row.get("bin_lo"), row.get("bin_hi"))
+    wil = _span(row.get("wilson_lo"), row.get("wilson_hi"))
+    p10 = _pct(row.get("ret_p10"), signed=True)
+    p90 = _pct(row.get("ret_p90"), signed=True)
+    mdd = _pct(row.get("mdd_p10"), signed=True)
+    raw = (f"오늘 같은 날(확률대 {span}): "
+           f"과거 독립 {n_eff:.0f}창 중 {k:.0f}창({wil})이 "
+           f"20일 안에 {_MINUS}5%; 그때 20일 수익 10~90%: {p10}~{p90}, 최대낙폭 나쁜 10% {mdd}")
+    # 분위수는 그 구간의 **모든 거래일**에서 계산한 값이다(bin_table 의 _dist_stats) — n_eff 개 창의
+    # 값이 아니므로 "그 N번의 수익" 이라고 쓰지 않는다.
+    ko = (f"오늘과 확률이 비슷했던 날(확률대 {span})은 과거에 서로 겹치지 않게 세어 {n_eff:.0f}번 "
+          f"있었습니다. 그중 {k:.0f}번(95% 범위 {wil})이 20일 안에 5% 넘게 떨어졌습니다. "
+          f"그 확률대의 날들을 보면 20일 뒤 수익은 10번 중 8번이 {p10}~{p90} 사이였고(10~90분위), "
+          f"나빴던 10%는 고점 대비 하락폭이 {mdd} 보다 컸습니다.")
+    en = (f"Days with a probability like today's (band {span}) happened {n_eff:.0f} times in the past, "
+          f"counted in windows that do not overlap. {k:.0f} of them (95% range {wil}) fell more than 5% "
+          f"within 20 days. Across the days in that band the 20-day return was between {p10} and {p90} "
+          f"8 times out of 10 (10th-90th percentile), and on the worst 10% the drop from the peak was "
+          f"bigger than {mdd}.")
+    return raw, (ko, en)
 
 
 def _cond(ep: dict, key: str) -> dict:
@@ -845,7 +904,8 @@ def _cond(ep: dict, key: str) -> dict:
     return c
 
 
-def _line_episode(ep: dict, dd: dict, notes: list) -> tuple[str, str]:
+def _line_episode(ep: dict, dd: dict, notes: list) -> tuple[str, str, tuple[str, str]]:
+    """카드 3줄: (분기, 원문, (쉬운 한국어, English)). 조건 프레이밍('만약 ~ 시작되면')을 반드시 유지한다."""
     ep = ep or {}
     dd = dd or {}
     q = ep.get("depth_q") or {}
@@ -859,7 +919,10 @@ def _line_episode(ep: dict, dd: dict, notes: list) -> tuple[str, str]:
     n = int(_num(ep.get("n")) if np.isfinite(_num(ep.get("n"))) else 0)
     if n == 0:
         notes.append("에피소드 표가 비어 있다")
-        return "empty", f"에피소드 조건부: {MISSING} (표본 없음)"
+        return ("empty", f"에피소드 조건부: {MISSING} (표본 없음)",
+                ("하락 사건 표가 비어 있어 앞으로 벌어질 수 있는 일을 말하지 않습니다(표본 없음).",
+                 "The table of decline episodes is empty, so we say nothing about what can happen next "
+                 "(no sample)."))
     # 분기 = **오늘의** ATH 대비 낙폭(§7 '표시는 ATH 대비 현재 낙폭에 조건부').
     # dd_from_ath 가 없으면 이 underwater 구간의 돌파 여부로 물러선다.
     cur = _num(dd.get("dd_from_ath"))
@@ -870,27 +933,60 @@ def _line_episode(ep: dict, dd: dict, notes: list) -> tuple[str, str]:
         notes.append("현재 낙폭 미상 — 돌파 플래그로 분기")
         breached_10 = bool(dd.get("breached_10"))
         breached_5 = bool(dd.get("breached_5"))
+    sp10, sp20 = _span(g10.get("lo"), g10.get("hi")), _span(g20.get("lo"), g20.get("hi"))
+    sp20_10 = _span(g20_10.get("lo"), g20_10.get("hi"))
+    xq50, xq10 = _pct(xq.get("p50"), signed=True), _pct(xq.get("p10"), signed=True)
     if breached_10:
         branch = "breached_10"
         line = (f"지금 {_MINUS}10% 아래다: 과거 {_cnt(g15_10.get('n'))}번의 {_MINUS}10% 중 "
                 f"{_cnt(g15_10.get('k'))}번은 {_MINUS}15%, {_cnt(g20_10.get('k'))}번"
-                f"({_span(g20_10.get('lo'), g20_10.get('hi'))})은 {_MINUS}20% 까지 갔다; "
+                f"({sp20_10})은 {_MINUS}20% 까지 갔다; "
                 f"저점까지 중앙 {_cnt(b2t.get('p50'))}세션, 저점에서 회복까지 중앙 {_cnt(t2r.get('p50'))}세션")
+        ko = (f"지금은 고점보다 10% 넘게 내려온 상태입니다. 과거에 10% 넘게 떨어진 일은 "
+              f"{_cnt(g15_10.get('n'))}번 있었습니다. 그중 {_cnt(g15_10.get('k'))}번은 15% 까지, "
+              f"{_cnt(g20_10.get('k'))}번(95% 범위 {sp20_10})은 20% 까지 갔습니다. 바닥까지 걸린 기간은 "
+              f"가운데가 {_cnt(b2t.get('p50'))}거래일이었고, 바닥에서 원래 값으로 돌아오기까지는 가운데가 "
+              f"{_cnt(t2r.get('p50'))}거래일이었습니다.")
+        en = (f"Right now the market is more than 10% below its peak. In the past a fall of 10% or more "
+              f"happened {_cnt(g15_10.get('n'))} times. {_cnt(g15_10.get('k'))} of them went on to 15%, and "
+              f"{_cnt(g20_10.get('k'))} (95% range {sp20_10}) went to 20%. The median time to the bottom was "
+              f"{_cnt(b2t.get('p50'))} trading days, and the median time from the bottom back to the old "
+              f"level was {_cnt(t2r.get('p50'))} trading days.")
     elif breached_5:
         branch = "breached_5"
         line = (f"지금 {_MINUS}5% 를 뚫었다: 과거 {_cnt(g10.get('n'))}번 중 {_cnt(g10.get('k'))}번"
-                f"({_span(g10.get('lo'), g10.get('hi'))})이 {_MINUS}10% 까지, "
-                f"{_cnt(g20.get('k'))}번({_span(g20.get('lo'), g20.get('hi'))})이 {_MINUS}20% 까지; "
-                f"여기서 추가 손실 중앙 {_pct(xq.get('p50'), signed=True)}, 나쁜 10% {_pct(xq.get('p10'), signed=True)}; "
+                f"({sp10})이 {_MINUS}10% 까지, "
+                f"{_cnt(g20.get('k'))}번({sp20})이 {_MINUS}20% 까지; "
+                f"여기서 추가 손실 중앙 {xq50}, 나쁜 10% {xq10}; "
                 f"저점까지 중앙 {_cnt(b2t.get('p50'))}세션")
+        ko = (f"지금은 고점보다 5% 넘게 내려온 상태입니다. 과거에 그런 일은 {_cnt(g10.get('n'))}번 "
+              f"있었습니다. 그중 {_cnt(g10.get('k'))}번(95% 범위 {sp10})은 10% 까지, "
+              f"{_cnt(g20.get('k'))}번(95% 범위 {sp20})은 20% 까지 갔습니다. 여기서 더 떨어진 폭은 "
+              f"가운데가 {xq50}, 나빴던 10%는 {xq10} 였습니다. 바닥까지는 가운데가 "
+              f"{_cnt(b2t.get('p50'))}거래일 걸렸습니다.")
+        en = (f"Right now the market is more than 5% below its peak. In the past that happened "
+              f"{_cnt(g10.get('n'))} times. {_cnt(g10.get('k'))} of them (95% range {sp10}) went on to 10%, "
+              f"and {_cnt(g20.get('k'))} (95% range {sp20}) went to 20%. From here the further fall was "
+              f"{xq50} in the middle and {xq10} for the worst 10%. The median time to the bottom was "
+              f"{_cnt(b2t.get('p50'))} trading days.")
     else:
         branch = "normal"
         line = (f"만약 {_MINUS}5% 에피소드가 시작되면: {_cnt(g10.get('n'))}번 중 {_cnt(g10.get('k'))}번"
-                f"({_span(g10.get('lo'), g10.get('hi'))})은 {_MINUS}10% 까지, "
-                f"{_cnt(g20.get('k'))}번({_span(g20.get('lo'), g20.get('hi'))})은 {_MINUS}20% 까지; "
+                f"({sp10})은 {_MINUS}10% 까지, "
+                f"{_cnt(g20.get('k'))}번({sp20})은 {_MINUS}20% 까지; "
                 f"절반은 {_pct(q.get('p50'), signed=True)} 안에서 멈춘다; "
-                f"추가 손실 중앙 {_pct(xq.get('p50'), signed=True)}, 나쁜 10% {_pct(xq.get('p10'), signed=True)}")
-    return branch, line
+                f"추가 손실 중앙 {xq50}, 나쁜 10% {xq10}")
+        ko = (f"5% 넘게 떨어지는 일이 시작된다면: 과거에 그런 일은 {_cnt(g10.get('n'))}번 있었습니다. "
+              f"그중 {_cnt(g10.get('k'))}번(95% 범위 {sp10})은 10% 까지 갔고, "
+              f"{_cnt(g20.get('k'))}번(95% 범위 {sp20})은 20% 까지 갔습니다. 절반은 "
+              f"{_pct(q.get('p50'), signed=True)} 안에서 멈췄습니다. 시작된 뒤 더 떨어진 폭은 가운데가 "
+              f"{xq50}, 나빴던 10%는 {xq10} 였습니다.")
+        en = (f"If a fall of more than 5% starts: in the past that happened {_cnt(g10.get('n'))} times. "
+              f"{_cnt(g10.get('k'))} of them (95% range {sp10}) went on to 10%, and {_cnt(g20.get('k'))} "
+              f"(95% range {sp20}) went to 20%. Half of them stopped within "
+              f"{_pct(q.get('p50'), signed=True)}. After the start the further fall was {xq50} in the middle "
+              f"and {xq10} for the worst 10%.")
+    return branch, line, (ko, en)
 
 
 def today_context(p_today, state_today, vix, har_fc, spot, tables: dict, dd: dict) -> dict:
@@ -915,12 +1011,12 @@ def today_context(p_today, state_today, vix, har_fc, spot, tables: dict, dd: dic
 
     rng_vix = implied_range(spot, vix)
     rng_har = har_range(spot, har_fc)
-    l1 = _line_market(vix, har_fc, spot, cov, rng_vix, rng_har, notes)
+    l1, b1 = _line_market(vix, har_fc, spot, cov, rng_vix, rng_har, notes)
 
     row = _pick_bin_row(bins_tbl, p_today) if len(bins_tbl) else None
-    l2 = _line_today(p_today, row, base, min_n_eff, notes)
+    l2, b2 = _line_today(p_today, row, base, min_n_eff, notes)
 
-    branch, l3 = _line_episode(ep, dd, notes)
+    branch, l3, b3 = _line_episode(ep, dd, notes)
 
     state_row = None
     if len(states_tbl) and state_today is not None and "state" in states_tbl.columns:
@@ -936,7 +1032,9 @@ def today_context(p_today, state_today, vix, har_fc, spot, tables: dict, dd: dic
     elif rng_har.get("ok"):
         headline = "har"
     return {
-        "lines": [l1, l2, l3], "line_keys": list(LINE_ORDER), "branch": branch,
+        # lines 는 원문(계산층 문자열) — 글자가 바뀌지 않았음을 test_scenarios.py 가 지킨다.
+        # lines_bi 는 **화면용** 쉬운 한국어/영어 한 쌍이다(메모리 전용 · 산출물 JSON 에는 들어가지 않는다).
+        "lines": [l1, l2, l3], "lines_bi": [b1, b2, b3], "line_keys": list(LINE_ORDER), "branch": branch,
         "range": {"vix": rng_vix, "har": rng_har, "headline": headline},
         "bin_row": row, "bin_grey": bool(row.get("grey")) if row else True,
         "state_row": state_row, "state_grey": bool(state_row.get("grey")) if state_row else True,

@@ -194,30 +194,35 @@ def test_p2_card_tones_mode_renders_all_sections_without_bad_tokens():
     assert 'id="p2"' in html
     # 1 헤드라인: 자연빈도 + 기저율 + VIX 공식 + VIX 보정 + 구간(넓은 쪽 = 보정 구간 12~47)
     assert "100일 중 약 21일" in html and "10번 중 2번" in html
-    assert "기저율 100일 중 약 16일" in html and "VIX 공식 100일 중 약 26일" in html and "VIX 보정 100일 중 약 19일" in html
-    assert "구간 12%~47%" in html and "넓은 쪽(calib)" in html and "파라미터 밴드 19%~24%" in html
-    assert "모델이 과거에 20~25% 라고 말했을 때 100번 중 26번 일어났습니다 (독립 사례 22개, 95% 구간 12%~47%)" in html
+    assert "평소에는" in html and "100일 중 약 16일" in html and "100일 중 약 26일" in html and "100일 중 약 19일" in html
+    assert "범위 12%~47%" in html and "넓은 쪽을 씁니다(calib)" in html and "흔들어 본 범위 19%~24%" in html
+    assert ("과거에 이 모델이 20~25% 라고 말한 날들을 모아 보면, 실제로는 100번 중 26번 일어났습니다 "
+            "(서로 겹치지 않는 사례 22개, 95% 범위 12%~47%)") in html
     # 2 사다리 오늘값 + 추가 요인
-    for nm in ("VIX 공식(보정 전)", "VIX 공식(일별 관측 보정)", "VIX 보정만(M1)", "+실현변동성(M2)", "+추세(M3)"):
+    for nm in (report.LADDER_BI["M0"][0], report.LADDER_BI["BGK"][0], report.LADDER_BI["M1"][0],
+               report.LADDER_BI["M2"][0], report.LADDER_BI["M3"][0]):
         assert nm in html
-    assert "오늘 추가 요인(실현변동성·추세)이 더한 것: +2.3pp" in html
+    assert "실제로 움직인 폭과 추세를 더했을 때 확률이 바뀐 정도: +2.3pp" in html
     # 3 상태·톤 (tones): 상태 pill + 톤 pill + 비중 + 다음 임계(확률 환산)
     assert 'class="pill"' in html and "주의" in html and "주식 비중 50%" in html
-    assert "caution 해제까지 p &lt; 19.0%" in html and "reduce 격상: p ≥ 39.5%" in html and "체류 잔여 2세션" in html
-    assert report.INFO_ONLY_LABEL not in html
+    assert "caution 에서 내려오려면 확률이 19.0% 아래" in html
+    assert "reduce 로 올라가려면 확률이 39.5% 이상" in html and "최소 2거래일은 더 유지" in html
+    assert report.INFO_ONLY_BI[0] not in html
     # 4 귀속 3막대 + 일간 변화(정확 합산) + 5일 누적
-    assert html.count('class="p2bar"') == 3 and "절편만의 확률 σ(b0) = 16.1%" in html
+    assert html.count('class="p2bar"') == 3 and "아무 정보도 안 쓴 출발점이 16.1%" in html
     assert "어제 대비 +1.3pp" in html and "VIX +0.9 · 실현-내재 갭 +0.6 · 추세 -0.2 · (재적합 +0.0)" in html
     assert "5일 누적 +1.8pp" in html
     # 5 요인 문맥 6 HAR 7 이벤트 8 정직 스트립
     assert "10년 백분위" in html and "VIX3M 17.2" in html
-    assert "예상 변동성(HAR) 13.1%" in html and "VIX 16.0%" in html and "최근 20일 실현 10.9%" in html and "변동성 프리미엄) +2.9pp" in html
-    assert "OOS log-MAE 0.270" in html
+    assert "예상 13.1%" in html and "VIX 16.0%" in html and "실제로 움직인 폭 10.9%" in html and "둘의 차이 +2.9pp" in html
+    assert "빗나간 정도 0.270" in html
     assert "2026-09-16" in html and "FOMC" in html and "이벤트 표 잔여" not in html
-    assert "정직 스트립" in html and "p2m3-abcd1234-2024-08-30" in html and "b0 -1.650 · x_vix +0.890" in html
-    assert "literal(M3): 통과" in html and "amended(#2a, post hoc, M3): 실패" in html
-    assert "실현 ≥5% 에피소드 1/8 · 경과 2.5/36개월" in html
-    assert "채점 45행 (창 2)" in html and "skill vs 기후학 +0.093 (95% [-0.050, +0.210])" in html
+    assert "숨기지 않는 것들" in html and "p2m3-abcd1234-2024-08-30" in html and "b0 -1.650 · x_vix +0.890" in html
+    assert "미리 정해둔 규칙 그대로(literal, M3): 통과" in html
+    assert "결과를 본 뒤 완화한 규칙(amended #2a, post hoc, M3): 실패" in html
+    assert "실제로 5% 넘게 떨어진 사건 1/8 · 지난 기간 2.5/36개월" in html
+    assert "채점 45행 (겹치지 않는 창 2)" in html
+    assert "평소 평균보다 나아진 정도 +0.093 (95% [-0.050, +0.210])" in html
     assert report.P2_FOOTNOTE in html
 
 
@@ -236,13 +241,13 @@ def test_p2_card_headline_is_the_deployed_rung_and_labels_the_rest_as_informatio
     html = report.p2_card(d)
     vis = _visible(html)
     assert not BAD_TOKEN.search(vis), BAD_TOKEN.search(vis)
-    assert "이런 날 100일 중 약 19일" in html                         # 헤드라인 = M1 (M3 의 21일이 아니다)
-    assert "배포 확률 = M1(VIX 보정만, 2 파라미터)" in html and f"M3 는 {report.INFO_DISPLAY_LABEL}" in html
-    assert "톤 적용 — M1 배포" in html and "주식 비중 50%" in html      # 배포됐으므로 톤·비중은 그대로
-    assert "r = 1.20 (= M1 확률 ÷ 기저율)" in html
-    assert html.count(report.INFO_DISPLAY_LABEL) >= 2                 # 사다리 M2·M3 칸 + 눈썹줄
-    assert "수준 귀속 — M1 기준" in html and html.count('class="p2bar"') == 1     # M1 은 VIX 항 하나뿐
-    assert "생산 모델 M3 (정보 표시(배포 안 함))" in vis and "p2m3-abcd1234-2024-08-30" in html
+    assert "100일 중 약 19일" in html                         # 헤드라인 = M1 (M3 의 21일이 아니다)
+    assert "실제로 쓰는 확률 = M1 (VIX 확률을 실제와 맞춤, 조정 숫자 2개)" in html and f"M3 는 {report.INFO_DISPLAY_BI[0]}" in html
+    assert "이 판정을 실제로 씁니다 — M1" in html and "주식 비중 50%" in html   # 배포됐으므로 판정·비중은 그대로
+    assert "지금 확률은 평소의 1.20배입니다" in html
+    assert html.count(report.INFO_DISPLAY_BI[0]) >= 2                 # 사다리 M2·M3 칸 + 눈썹줄
+    assert "이 확률이 어떻게 만들어졌나 — M1 기준" in html and html.count('class="p2bar"') == 1     # M1 은 VIX 항 하나뿐
+    assert f"만들어 둔 모델 M3 ({report.INFO_DISPLAY_BI[0]})" in vis and "p2m3-abcd1234-2024-08-30" in html
     assert "b0 -1.000 · x_vix +0.920" in html                        # 정직 스트립의 계수 = 배포 모델의 것
     # 사다리에 세 단이 모두 있고 M3 는 정보값(21.3%)으로 남는다
     assert "21.3%" in html and "19.0%" in html
@@ -250,10 +255,13 @@ def test_p2_card_headline_is_the_deployed_rung_and_labels_the_rest_as_informatio
 
 def test_p2_card_info_only_hides_tone_and_shows_trial_label():
     html = report.p2_card(_today_p2(deploy_mode="info_only", tone_model=None))
-    assert report.INFO_ONLY_LABEL in html
-    assert 'class="pill"' not in html and "주식 비중" not in html          # 톤 문구 숨김
-    assert "caution 주의" in html                                          # 상태는 회색으로 정보만
-    assert "비중은 v0 판정을 따릅니다" in html
+    assert report.INFO_ONLY_BI[0] in html
+    # 톤 문구 숨김: 톤 pill 도, 실제 비중 **값**(예 "주식 비중 50%")도 나오지 않아야 한다.
+    # ("신호등 판정이나 주식 비중을 주장하지 않습니다" 처럼 비중을 **부정**하는 문장은 나와야 하므로 낱말만 찾지 않는다.)
+    assert 'class="pill"' not in html
+    assert not re.search(r"주식 비중\s*\d+\s*%", html)
+    assert "caution" in html and "주의" in html                            # 상태는 회색으로 정보만(식별자 + 뜻풀이)
+    assert "비중은 예전 v0 규칙을 그대로 따릅니다" in html
     assert not BAD_TOKEN.search(_visible(html))
 
 
@@ -262,9 +270,9 @@ def test_p2_card_input_missing_keeps_state_and_says_unavailable():
                   dod={"d_pp": {"x_vix": float("nan"), "x_har": float("nan"), "x_ma": float("nan"), "refit": 0.0}, "d_p": float("nan"), "refit": False})
     html = report.p2_card(d)
     assert report.P2_PROB_UNAVAILABLE in html and "x_vix(VIX 결측)" in html
-    assert "100일 중 약" not in html.split("사다리")[0]          # 헤드라인 자연빈도 없음
-    assert "caution" in html and "체류 3세션" in html           # 상태 유지
-    assert "r = — (확률 계산 불가)" in html
+    assert "100일 중 약" not in html.split("단계별 모델이 오늘 내놓은 값")[0]   # 헤드라인 자연빈도 없음
+    assert "caution" in html and "이 상태로 3거래일째" in html   # 상태 유지
+    assert "평소 대비 몇 배인지 계산할 수 없습니다" in html
     assert "변화 계산 불가" in html
     assert not BAD_TOKEN.search(_visible(html))
     # 확률 NaN 인데 사유가 없으면 카드가 사유 미기록을 드러낸다(지어내지 않음)
@@ -275,7 +283,8 @@ def test_p2_card_input_missing_keeps_state_and_says_unavailable():
 def test_p2_card_empty_and_odd_inputs():
     html = report.p2_card({})
     assert 'id="p2"' in html and not BAD_TOKEN.search(_visible(html))
-    assert "상태 자료 없음" in html and "귀속 자료 없음" in html and "홀드아웃(2024-09-01~): 미해제" in html
+    assert "상태 자료가 없습니다" in html and "귀속 자료 없음" in html
+    assert "손대지 않고 남겨둔 최근 구간(2024-09-01~): 아직 열지 않았습니다" in html
     html = report.p2_card(None)
     assert 'id="p2"' in html
     # 별칭(장부 열 이름)·churn 경보·이벤트 표 잔여 경고·홀드아웃
@@ -284,9 +293,10 @@ def test_p2_card_empty_and_odd_inputs():
          "events_horizon": {"last_fomc": "2026-10-28", "days_left": 40, "warn": True, "warn_days": 60},
          "holdout": {"n": 484, "bss_clim": 0.04, "bss_vix": 0.15, "bss_m1": -0.01, "ci": [-0.1, 0.18]}}
     html = report.p2_card(d)
-    assert "100일 중 약 30일" in html and "구간 20%~40%" in html and report.P2_CHURN_LABEL in html
-    assert "이벤트 표 잔여 40일" in html and "홀드아웃(2024-09-03~, 1회): n=484 (창 24)" in html
-    assert "reduce 축소" in html and "축소" in html and "주식 비중 25%" in html
+    assert "100일 중 약 30일" in html and "범위 20%~40%" in html and report.P2_CHURN_LABEL_BI[0] in html
+    assert "이벤트 표 잔여 40일" in html
+    assert "손대지 않고 남겨둔 최근 구간(2024-09-03~, 한 번만 씁니다): n=484 (겹치지 않는 창 24)" in html
+    assert "reduce" in html and "축소" in html and "주식 비중 25%" in html
     assert not BAD_TOKEN.search(_visible(html))
 
 
@@ -478,7 +488,7 @@ def test_honesty_strip_reports_the_rung_amended_actually_selected():
                        "amended": {"M3": {"pass": False, "A": True, "B": True, "C": False},
                                    "M1": {"pass": True, "A": True, "B": True, "C": True}}}
     html = report.p2_card(d)
-    assert "amended(#2a, post hoc, M1): 통과 (사전 후보 M3 는 실패)" in html
+    assert "결과를 본 뒤 완화한 규칙(amended #2a, post hoc, M1): 통과 (미리 정해둔 후보 M3 는 실패)" in html
     assert "amended(#2a, post hoc): 실패" not in html
     assert not BAD_TOKEN.search(_visible(html))
 
@@ -491,12 +501,13 @@ def test_honesty_strip_does_not_claim_zero_skill_when_rows_came_from_another_run
                  "bss_vix": 0.01, "prob_sources": {"M3(정보 표시)": 1, "M1(배포)": 1}, "notes": [],
                  "kill_rule": {"episodes_required": 8, "months_required": 36}}
     html = report.p2_card(d)
-    assert "정의상 0" not in html and "여러 단에서 나왔습니다" in html
+    assert "정의상 0" not in html and "여러 단계에서 나왔습니다" in html
     # 실제로 M1 계열만 채점됐고 장부가 동일성을 확인했으면 문구가 돌아온다
     d["live"] = {**d["live"], "bss_m1": 0.0, "prob_sources": {"M1(배포)": 45},
                  "notes": ["m1 대비 skill 은 정의상 0 입니다 — 배포 확률(prob_dd5_20)이 M1 그 자체이기 때문"]}
     html2 = report.p2_card(d)
-    assert "배포 단이 M1 이라 vs M1 은 정의상 0" in html2 and "여러 단에서 나왔습니다" not in html2
+    assert "채점한 확률이 M1 에서 나왔으므로 M1 대비는 정의상 0 입니다" in html2
+    assert "여러 단계에서 나왔습니다" not in html2
 
 
 # ------------------------------------------------------------------
@@ -525,7 +536,7 @@ def test_render_index_with_p2_card_and_links(tmp_path):
     assert 'id="p2"' in html and "100일 중 약 21일" in html
     assert 'href="calibration_p2.html"' in html and 'href="backtest_v1.html"' in html and 'href="backtest_v0.html"' in html
     # 장부 행(2026-09-03)은 홀드아웃 구간 안이고 해제 파일이 없다 → 채점 보류를 사유와 함께 밝힌다(§6)
-    assert "장부 라이브 Brier: 홀드아웃 미해제 → 라이브 채점 보류" in html
+    assert "실제 기록으로 매긴 점수: 아직 매기지 않습니다 — 남겨둔 구간을 열지 않았기 때문입니다" in html
     assert "P2: 홀드아웃 미해제" in html                          # 장부 P2 주석이 경고 목록에 실린다
     assert html.index("꾸준한 상승 흐름") < html.index('id="p2"')     # v0 판정 블록 아래
     assert not BAD_TOKEN.search(_visible(html))

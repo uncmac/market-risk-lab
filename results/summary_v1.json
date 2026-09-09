@@ -2,7 +2,7 @@
  "schema_version": 1,
  "headline_note": "kpis/allocation/episodes/directional/flags 와 backtest_v1.csv 의 p 는 배치된 단 M3(p_m3) 의 확률로 돌린 결정층 — 정보 표시(배포 안 함). 2026-09-08 이전에는 배치와 무관하게 p_m3 를 실었다(그 결함 정정). 배포되지 않은 단은 info_layers 에 정보로만 둔다.",
  "run": {
-  "generated_at_utc": "2026-09-08T18:12:29Z",
+  "generated_at_utc": "2026-09-09T00:43:44Z",
   "start": "2003-01-02",
   "end": "2024-08-30",
   "n_sessions": 5453,
@@ -22,7 +22,7 @@
   "spec_sha256": "81c2a6bf7d43b57edda462f8e8133f13de616664d6e21b21cc92f7b1fbf992d2",
   "feature_rule": "p2|x_vix=logit(refl(VIX,dd=0.05,h=20,drift=-s2/2))|x_har=mean_log(rv1,rv5,rv22;GK+OV;floor=1e-8)-ln(VIX/100)|x_ma=C/SMA180-1|vix_ffill<=3|purge=20|C=1.0|train_start=1993-10-14",
   "calib_csv": "C:\\Users\\CJY_Laptop\\market-risk-lab\\results\\calib_p2_walkforward.csv",
-  "calib_generated_at_utc": "2026-09-08T18:12:01Z",
+  "calib_generated_at_utc": "2026-09-09T00:43:27Z",
   "calib_oos_csv_sha256": "8b48b63cbe60a48128a32af5bc41cda0efafd9917eb2e275b669b887813e7e34",
   "holdout_start": "2024-09-01",
   "hard_cut_end": "2024-08-30",
@@ -876,42 +876,42 @@
   "baseline_20": 0.6875857338820301,
   "detection_rate_10": 1.0,
   "median_lead_10": 20.0,
-  "cagr_strategy": 0.09904631381052975,
-  "cagr_bh": 0.13869047694477765,
-  "maxdd_strategy": -0.16055571788846335,
-  "maxdd_bh": -0.3371727431876228,
-  "worst_month_strategy": -0.07731616062832725,
-  "worst_month_bh": -0.12487139588010565,
+  "cagr_strategy": 0.09904659884795564,
+  "cagr_bh": 0.1386904677261258,
+  "maxdd_strategy": -0.16055551183718564,
+  "maxdd_bh": -0.3371728563018299,
+  "worst_month_strategy": -0.07731598721955069,
+  "worst_month_bh": -0.12487123987381687,
   "brier_climatology_dd5": 0.12547524090162407,
   "base_rate_dd5": 0.147119341563786,
   "signals_v0_sha256": "d4927bf98b9264bf56c716b2d1e33dfea2309d4d3a4fef3c9aac80c9f935c5f4",
   "window_rule": "calendar|spy=2y,vix=2y,fang=2y,watch=1y,btc=2y|spy,vix,fang,watch:(asof-span,asof]|btc:[last_bar-span,last_bar]",
-  "generated_at_utc": "2026-09-08T16:10:49Z",
+  "generated_at_utc": "2026-09-09T00:43:07Z",
   "allocation": {
    "start": "2015-01-02",
    "end": "2026-09-04",
    "n_days": 2935,
    "years": 11.646825396825397,
-   "cagr": 0.09904631381052975,
-   "max_dd": -0.16055571788846335,
+   "cagr": 0.09904659884795564,
+   "max_dd": -0.16055551183718564,
    "max_dd_date": "2022-06-16",
-   "worst_month": -0.07731616062832725,
+   "worst_month": -0.07731598721955069,
    "worst_month_label": "2018-12",
-   "total_return": 2.00404283021418,
-   "ann_vol": 0.10997579597651076,
+   "total_return": 2.004051904243499,
+   "ann_vol": 0.10997574528767025,
    "n_switches": 667,
    "switches_per_year": 57.26882453151618,
    "avg_exposure": 0.702725724020443,
    "cost_total": 0.181375,
-   "bh_cagr": 0.13869047694477765,
-   "bh_max_dd": -0.3371727431876228,
+   "bh_cagr": 0.1386904677261258,
+   "bh_max_dd": -0.3371728563018299,
    "bh_max_dd_date": "2020-03-23",
-   "bh_worst_month": -0.12487139588010565,
+   "bh_worst_month": -0.12487123987381687,
    "bh_worst_month_label": "2020-03",
-   "bh_total_return": 3.5388643804841324,
-   "bh_ann_vol": 0.17566401765635875,
-   "excess_cagr": -0.0396441631342479,
-   "maxdd_improvement": 0.17661702529915946,
+   "bh_total_return": 3.5388639525110213,
+   "bh_ann_vol": 0.17566406432805587,
+   "excess_cagr": -0.039643868878170174,
+   "maxdd_improvement": 0.17661734446464428,
    "exposure_map": {
     "buy": 1.0,
     "hold": 1.0,
@@ -3825,7 +3825,7 @@
      }
     }
    },
-   "runtime_sec": 4.5,
+   "runtime_sec": 4.2,
    "directional": [
     {
      "tone": "buy",
@@ -5307,7 +5307,7 @@
     }
    }
   },
-  "runtime_sec": 4.5,
+  "runtime_sec": 4.2,
   "directional": [
    {
     "tone": "buy",
@@ -5996,7 +5996,7 @@
      }
     }
    },
-   "runtime_sec": 1.9
+   "runtime_sec": 1.7
   },
   "symmetric_dwell": {
    "label": "M3·symmetric_dwell",
@@ -6394,7 +6394,7 @@
      }
     }
    },
-   "runtime_sec": 1.9
+   "runtime_sec": 1.7
   },
   "no_dwell": {
    "label": "M3·no_dwell",
@@ -6792,7 +6792,7 @@
      }
     }
    },
-   "runtime_sec": 1.4
+   "runtime_sec": 1.3
   }
  },
  "flags": [
@@ -6809,5 +6809,5 @@
   "summary_json": "C:\\Users\\CJY_Laptop\\market-risk-lab\\results\\summary_v1.json",
   "report_html": "C:\\Users\\CJY_Laptop\\market-risk-lab\\docs\\backtest_v1.html"
  },
- "total_runtime_sec": 16.3
+ "total_runtime_sec": 15.0
 }

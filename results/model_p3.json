@@ -440,6 +440,6 @@
   "data_sha256": "6acfb88a95f30901548e4ec1bdef82bc4ebcba1d0ab8b1905c0a36a49e174a37",
   "spec_sha256": "81c2a6bf7d43b57edda462f8e8133f13de616664d6e21b21cc92f7b1fbf992d2"
  },
- "created_at_utc": "2026-09-08T18:12:55Z",
+ "created_at_utc": "2026-09-09T00:50:28Z",
  "note": "유효 모드 = p2.deploy_mode ∧ p3.deploy_mode ∧ ¬kill_record ∧ ¬kill_manual (§8.3). 이 파일은 킬을 풀지 않는다 — 킬 해제는 번호 붙인 장부 항목으로만."
 }
