@@ -7,17 +7,17 @@
     "x_ma"
   ],
   "coef": {
-    "x_vix": 0.6914530706597342,
-    "x_har": 0.5739911152719804,
-    "x_ma": -2.3439618704315
+    "x_vix": 0.6936717036750627,
+    "x_har": 0.5716162228528165,
+    "x_ma": -2.3374089973643404
   },
-  "intercept": -0.9135028871646554,
-  "clim": 0.17139540882125354,
+  "intercept": -0.914122943970678,
+  "clim": 0.17126644312612846,
   "refit_date": "2024-08-30",
   "train_start": "1993-10-14",
   "train_end": "2024-08-01",
   "n_train": 7754,
-  "n_pos": 1329,
+  "n_pos": 1328,
   "n_params": 4,
   "feature_rule": "p2|x_vix=logit(refl(VIX,dd=0.05,h=20,drift=-s2/2))|x_har=mean_log(rv1,rv5,rv22;GK+OV;floor=1e-8)-ln(VIX/100)|x_ma=C/SMA180-1|vix_ffill<=3|purge=20|C=1.0|train_start=1993-10-14",
   "spec_sha256": "81c2a6bf7d43b57edda462f8e8133f13de616664d6e21b21cc92f7b1fbf992d2",
@@ -30,8 +30,8 @@
     "n_iter": 20,
     "purge": 20,
     "train_start_rule": "1993-10-14",
-    "data_sha256": "877698d99ea0e68222387e191acf94cf1ea39edbc1967da249423edf519f3175",
-    "hard_cut_data_sha256": "877698d99ea0e68222387e191acf94cf1ea39edbc1967da249423edf519f3175",
+    "data_sha256": "22a1b7c6a693cd7beb4447ab46c11149899b7069f3d49238dcb87f3d0ff7cf14",
+    "hard_cut_data_sha256": "22a1b7c6a693cd7beb4447ab46c11149899b7069f3d49238dcb87f3d0ff7cf14",
     "end": "2024-08-30",
     "live_mode": "pre_holdout_hard_cut",
     "acceptance_rule": "amended",
@@ -40,9 +40,9 @@
       "24",
       "18"
     ],
-    "git_sha": "5813a353190da539d3db354c30c4bd0761da3aed",
+    "git_sha": "367745f3e59f65e31dbaad8f6b1bb88574d9a258",
     "first_refit": "2003-01-02",
     "determinism_status": "data_changed"
   },
-  "created_at_utc": "2026-09-13T17:00:21Z"
+  "created_at_utc": "2026-09-20T16:50:47Z"
 }
